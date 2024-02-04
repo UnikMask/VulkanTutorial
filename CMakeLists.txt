@@ -6,7 +6,8 @@ include(FetchContent)
 project("VulkanTutorial" VERSION "0.1.0" DESCRIPTION "My work on the vulkan tutorial")
 
 set(GLM_ENABLE_CXX_20 "ON")
-set(GLFW_USE_WAYLAND "ON")
+set(GLFW_BUILD_WAYLAND "ON")
+find_package(Vulkan REQUIRED)
 FetchContent_Declare(
 	glm
 	GIT_REPOSITORY	https://github.com/g-truc/glm.git
@@ -15,12 +16,12 @@ FetchContent_Declare(
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG e2c92645460f680fd272fd2eed591efb2be7dc31
+    GIT_TAG 00e86d4b733103a23278fe53ce58a0d14dd47d32
 )
 FetchContent_MakeAvailable(glm)
 FetchContent_MakeAvailable(glfw)
 
-add_library(VulkanTutorial SHARED "./main.cpp" "./main.h")
+add_executable(VulkanTutorial "./main.cpp" "./main.h")
 
 message(STATUS $ENV{SHADER_COMPILE_SCRIPT})
 
@@ -34,10 +35,18 @@ add_custom_target ( compile_tags ALL
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Compiling project tags")
 
+add_custom_target ( copy_resources ALL 
+    COMMAND cp *.spv build/
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Copying resources to build"
+)
+
 add_dependencies(${PROJECT_NAME} compile_shaders)
 add_dependencies(${PROJECT_NAME} compile_tags)
+add_dependencies(${PROJECT_NAME} copy_resources)
 
 target_link_libraries(${PROJECT_NAME} 
+    PUBLIC Vulkan::Vulkan
     PUBLIC glm::glm
     PUBLIC glfw)
 

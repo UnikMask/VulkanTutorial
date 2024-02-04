@@ -1,4 +1,3 @@
-#include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -15,7 +14,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <vulkan/vulkan_core.h>
 
 #include "main.h"
 
@@ -134,10 +132,11 @@ private:
   }
 
   void initWindow() {
+    glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    glfwWindowHintString(GLFW_WAYLAND_APP_ID, "vulkan_tutorial");
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHintString(GLFW_WAYLAND_APP_ID, WAYLAND_APP_ID);
     window = glfwCreateWindow(WIDTH, HEIGHT, WINDOW_NAME, nullptr, nullptr);
   }
 
