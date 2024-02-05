@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -14,8 +15,11 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 
 #include "main.h"
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 VkResult CreateDebugUtilsMessengerEXT(
 	VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
@@ -97,12 +101,13 @@ class HelloTriangleApplication {
 	// Drawing //
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 	VkCommandPool commandPool;
-	VkCommandBuffer commandBuffer;
+	std::vector<VkCommandBuffer> commandBuffers;
 
 	// Synchronisation //
-	VkSemaphore imageAvailableSemaphore;
-	VkSemaphore renderFinishedSemaphore;
-	VkFence inFlightFence;
+	std::vector<VkSemaphore> imageAvailableSemaphores;
+	std::vector<VkSemaphore> renderFinishedSemaphores;
+	std::vector<VkFence> inFlightFences;
+	uint32_t currentFrame = 0; // Frames-in-flight feature
 
 	////////////////////
 	// Initialization //
@@ -127,7 +132,7 @@ class HelloTriangleApplication {
 		// Drawing
 		createFramebuffers();
 		createCommandPool();
-		createCommandBuffer();
+		createCommandBuffers();
 		createSyncObjects();
 	}
 
@@ -140,7 +145,6 @@ class HelloTriangleApplication {
 		glfwInit();
 
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 		glfwWindowHintString(GLFW_X11_CLASS_NAME, "vulkan_tutorial");
 		glfwWindowHintString(GLFW_WAYLAND_APP_ID, WAYLAND_APP_ID);
 		glfwWindowHint(GLFW_REFRESH_RATE, 60);
@@ -975,15 +979,17 @@ class HelloTriangleApplication {
 		}
 	}
 
-	void createCommandBuffer() {
+	void createCommandBuffers() {
+		commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 		VkCommandBufferAllocateInfo allocInfo{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 			.commandPool = commandPool,
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-			.commandBufferCount = 1,
+			.commandBufferCount = (uint32_t)commandBuffers.size(),
 		};
 
-		int res = vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+		int res =
+			vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data());
 		switch (res) {
 		case VK_SUCCESS:
 			break;
@@ -1053,13 +1059,15 @@ class HelloTriangleApplication {
 			.flags = VK_FENCE_CREATE_SIGNALED_BIT,
 		};
 
-		if (vkCreateSemaphore(device, &semaphoreInfo, nullptr,
-							  &imageAvailableSemaphore) != VK_SUCCESS ||
-			vkCreateSemaphore(device, &semaphoreInfo, nullptr,
-							  &renderFinishedSemaphore) != VK_SUCCESS ||
-			vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) !=
-				VK_SUCCESS) {
-			throw std::runtime_error(std::string(ERROR_CREATE_SYNC));
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			if (vkCreateSemaphore(device, &semaphoreInfo, nullptr,
+								  &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+				vkCreateSemaphore(device, &semaphoreInfo, nullptr,
+								  &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+				vkCreateFence(device, &fenceInfo, nullptr,
+							  &inFlightFences[i]) != VK_SUCCESS) {
+				throw std::runtime_error(std::string(ERROR_CREATE_SYNC));
+			}
 		}
 	}
 
@@ -1077,22 +1085,24 @@ class HelloTriangleApplication {
 
 	void drawFrame() {
 		// Wait for last frame to finish
-		vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-		vkResetFences(device, 1, &inFlightFence);
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE,
+						UINT64_MAX);
+		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 		// Get image index from swap chain and device
 		uint32_t imageIndex;
 		vkAcquireNextImageKHR(device, swapChain, UINT64_MAX,
-							  imageAvailableSemaphore, VK_NULL_HANDLE,
-							  &imageIndex);
+							  imageAvailableSemaphores[currentFrame],
+							  VK_NULL_HANDLE, &imageIndex);
 
 		// Reset and record command buffer on image index given.
-		vkResetCommandBuffer(commandBuffer, 0);
-		recordCommandBuffer(commandBuffer, imageIndex);
+		vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+		recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
 
 		// Submit command queue, with semaphores and fences.
-		VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
-		VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+		VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
+		VkSemaphore signalSemaphores[] = {
+			renderFinishedSemaphores[currentFrame]};
 		VkPipelineStageFlags waitStages[] = {
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 		VkSubmitInfo submitInfo{
@@ -1101,18 +1111,18 @@ class HelloTriangleApplication {
 			.pWaitSemaphores = waitSemaphores,
 			.pWaitDstStageMask = waitStages,
 			.commandBufferCount = 1,
-			.pCommandBuffers = &commandBuffer,
+			.pCommandBuffers = &commandBuffers[currentFrame],
 			.signalSemaphoreCount = 1,
 			.pSignalSemaphores = signalSemaphores,
 		};
-		int res = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence);
+		int res = vkQueueSubmit(graphicsQueue, 1, &submitInfo,
+								inFlightFences[currentFrame]);
 		switch (res) {
 		case VK_SUCCESS:
 			break;
 		default:
 			throw std::runtime_error(std::string(ERROR_SUBMIT_QUEUE));
 		}
-
 		VkSwapchainKHR swapChains[] = {swapChain};
 		VkPresentInfoKHR presentInfo{
 			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -1124,6 +1134,7 @@ class HelloTriangleApplication {
 			.pResults = nullptr,
 		};
 		vkQueuePresentKHR(graphicsQueue, &presentInfo);
+		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
 
 	/////////////
@@ -1131,9 +1142,11 @@ class HelloTriangleApplication {
 	/////////////
 
 	void cleanup() {
-		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-		vkDestroyFence(device, inFlightFence, nullptr);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+			vkDestroyFence(device, inFlightFences[i], nullptr);
+		}
 		vkDestroyCommandPool(device, commandPool, nullptr);
 		for (auto framebuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
