@@ -759,12 +759,14 @@ class HelloTriangleApplication {
 														  fragCreateInfo};
 
 		// Setup vertex input, and assembly state
+		auto bindingDescription = Vertex::getBindingDescription();
+		auto attributeDescriptions = Vertex::getAttributeDescriptions();
 		VkPipelineVertexInputStateCreateInfo vertexInputCreateInfo{
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-			.vertexBindingDescriptionCount = 0,
-			.pVertexBindingDescriptions = nullptr,
-			.vertexAttributeDescriptionCount = 0,
-			.pVertexAttributeDescriptions = nullptr,
+			.vertexBindingDescriptionCount = 1,
+			.pVertexBindingDescriptions = &bindingDescription,
+			.vertexAttributeDescriptionCount = 1,
+			.pVertexAttributeDescriptions = attributeDescriptions.data(),
 		};
 
 		VkPipelineInputAssemblyStateCreateInfo assemblyStateCreateInfo{

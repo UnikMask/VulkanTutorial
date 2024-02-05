@@ -1,7 +1,10 @@
+#include <array>
+#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <vector>
 
 // Debug Configuration //
@@ -12,7 +15,7 @@ const bool enableValidationLayers = true;
 #endif
 
 const std::vector<const char *> validationLayers = {
-    "VK_LAYER_KHRONOS_validation"};
+	"VK_LAYER_KHRONOS_validation"};
 
 // Window information //
 
@@ -26,26 +29,40 @@ const uint32_t WIDTH = 1920;
 // Application Information //
 
 const VkApplicationInfo APP_INFO{
-    .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-    .pApplicationName = "Vulkan Tutorial App",
-    .applicationVersion = VK_MAKE_VERSION(0, 0, 1),
-    .pEngineName = "No Engine",
-    .engineVersion = VK_MAKE_VERSION(0, 0, 1),
-    .apiVersion = VK_API_VERSION_1_0,
+	.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+	.pApplicationName = "Vulkan Tutorial App",
+	.applicationVersion = VK_MAKE_VERSION(0, 0, 1),
+	.pEngineName = "No Engine",
+	.engineVersion = VK_MAKE_VERSION(0, 0, 1),
+	.apiVersion = VK_API_VERSION_1_0,
 };
 
 // Graphical extensions //
 
 const std::vector<const char *> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+	VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
 
 #define SWAP_SURFACE_TARGET_FORMAT VK_FORMAT_B8G8R8A8_SRGB
 #define SWAP_SURFACE_TARGET_COLORSPACE VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
 
 const std::vector<VkPresentModeKHR> presentModeOrder = {
-    VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_FIFO_KHR,
-    VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_FIFO_RELAXED_KHR};
+	VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_FIFO_KHR,
+	VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_FIFO_RELAXED_KHR};
+
+// Shader Objects //
+struct Vertex {
+	glm::vec2 pos;
+	glm::vec3 color;
+
+	static VkVertexInputBindingDescription getBindingDescription();
+	static std::array<VkVertexInputAttributeDescription, 2>
+	getAttributeDescriptions();
+};
+
+const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+									  {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+									  {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
 
 // Errors //
 
@@ -54,7 +71,7 @@ const std::vector<VkPresentModeKHR> presentModeOrder = {
 #define VK_GENERAL_ERR_MSG "Something went wrong"
 
 #define ERROR_VALIDATION_LAYERS_MSG                                            \
-  "Some validation layer was requested, but unavailable!"
+	"Some validation layer was requested, but unavailable!"
 #define ERROR_DEBUG_MESSENGER " - Can't load debug messenger."
 
 #define ERROR_NO_DEVICES "No GPU with Vulkan support present"

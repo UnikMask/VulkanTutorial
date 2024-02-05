@@ -21,7 +21,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(glm)
 FetchContent_MakeAvailable(glfw)
 
-add_executable(VulkanTutorial "./main.cpp" "./main.h")
+add_executable(VulkanTutorial "./main.cpp" "./main.h" "./Vertex.cpp")
 
 message(STATUS $ENV{SHADER_COMPILE_SCRIPT})
 
