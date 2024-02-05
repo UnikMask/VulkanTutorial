@@ -105,3 +105,6 @@ const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 
 #define ERROR_CREATE_SYNC "Failed to create sync objects!"
 #define ERROR_SUBMIT_QUEUE "Failed to submit draw command buffer!"
+
+#define ERROR_ACQUIRE_NEXT_IMAGE_KHR "Failed to acquire swap chain image!"
+#define ERROR_QUEUE_PRESENT_KHR "Failed to present swap chain image!"
