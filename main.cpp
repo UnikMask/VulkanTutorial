@@ -1068,10 +1068,6 @@ class HelloTriangleApplication {
 		VkBuffer vertexBuffers[]{vertexBuffer};
 		VkDeviceSize offsets[] = {0};
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-
-		viewport.width = static_cast<float>(swapChainExtent.width);
-		viewport.height = static_cast<float>(swapChainExtent.height);
-		scissor.extent = swapChainExtent;
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
@@ -1207,6 +1203,11 @@ class HelloTriangleApplication {
 			throw std::runtime_error(std::string(ERROR_ACQUIRE_NEXT_IMAGE_KHR));
 		}
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
+
+		// Resize viewport and scissor to current frame size
+		viewport.width = static_cast<float>(swapChainExtent.width);
+		viewport.height = static_cast<float>(swapChainExtent.height);
+		scissor.extent = swapChainExtent;
 
 		// Reset and record command buffer on image index given.
 		vkResetCommandBuffer(commandBuffers[currentFrame], 0);
