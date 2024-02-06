@@ -114,11 +114,10 @@ class HelloTriangleApplication {
 	uint32_t currentFrame = 0;		 // Frames-in-flight feature
 
 	// Buffers //
-	VkBuffer vertexBuffer;
-	VkBuffer indexBuffer;
-
-	VkDeviceMemory vertexBufferMemory;
-	VkDeviceMemory indexBufferMemory;
+	VkBuffer ivBuffer;
+	VkDeviceMemory ivBufferMemory;
+	VkDeviceSize verticesOffset;
+	VkDeviceSize indicesOffset;
 
 	////////////////////
 	// Initialization //
@@ -145,8 +144,7 @@ class HelloTriangleApplication {
 		createFramebuffers();
 		createCommandPool();
 
-		createVertexBuffer();
-		createIndexBuffer();
+		createIVBuffer();
 
 		createCommandBuffers();
 	}
@@ -1106,10 +1104,9 @@ class HelloTriangleApplication {
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 						  graphicsPipeline);
 
-		VkBuffer vertexBuffers[]{vertexBuffer};
-		VkDeviceSize offsets[] = {0};
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-		vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0,
+		VkDeviceSize offsets[] = {verticesOffset};
+		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivBuffer, offsets);
+		vkCmdBindIndexBuffer(commandBuffer, ivBuffer, indicesOffset,
 							 VK_INDEX_TYPE_UINT16);
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
@@ -1171,37 +1168,38 @@ class HelloTriangleApplication {
 	// Buffers //
 	/////////////
 
-	void createVertexBuffer() {
-		createStagedBuffer(sizeof(Vertex) * vertices.size(),
-						   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertexBuffer,
-						   vertexBufferMemory, vertices.data());
-	}
+	void createIVBuffer() {
+		VkDeviceSize verticesSize = sizeof(Vertex) * vertices.size();
+		VkDeviceSize indicesSize = sizeof(uint16_t) * indices.size();
+		VkDeviceSize bufferSize = verticesSize + indicesSize;
+		verticesOffset = 0;
+		indicesOffset = verticesSize;
 
-	void createIndexBuffer() {
-		createStagedBuffer(sizeof(uint16_t) * indices.size(),
-						   VK_BUFFER_USAGE_INDEX_BUFFER_BIT, indexBuffer,
-						   indexBufferMemory, indices.data());
-	}
-
-	void createStagedBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-							VkBuffer &buffer, VkDeviceMemory &mem,
-							const void *src) {
 		// Create staging buffer
 		VkBuffer stagingBuffer;
 		VkDeviceMemory stagingBufferMemory;
-		createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 					 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 						 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 					 stagingBuffer, stagingBufferMemory);
 		void *data;
-		vkMapMemory(device, stagingBufferMemory, 0, size, 0, &data);
-		memcpy(data, src, size);
+		vkMapMemory(device, stagingBufferMemory, 0, verticesSize, 0, &data);
+		memcpy(data, vertices.data(), verticesSize);
+		vkUnmapMemory(device, stagingBufferMemory);
+
+		vkMapMemory(device, stagingBufferMemory, indicesOffset, indicesSize, 0,
+					&data);
+		memcpy(data, indices.data(), verticesSize);
 		vkUnmapMemory(device, stagingBufferMemory);
 
 		// Create buffer and copy staging buffer data
-		createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
-					 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, mem);
-		copyBuffer(stagingBuffer, buffer, size);
+		createBuffer(bufferSize,
+					 VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+						 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+						 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+					 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, ivBuffer,
+					 ivBufferMemory);
+		copyBuffer(stagingBuffer, ivBuffer, bufferSize);
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingBufferMemory, nullptr);
 	}
@@ -1420,10 +1418,8 @@ class HelloTriangleApplication {
 
 	void cleanup() {
 		cleanupSwapChain();
-		vkDestroyBuffer(device, vertexBuffer, nullptr);
-		vkDestroyBuffer(device, indexBuffer, nullptr);
-		vkFreeMemory(device, vertexBufferMemory, nullptr);
-		vkFreeMemory(device, indexBufferMemory, nullptr);
+		vkDestroyBuffer(device, ivBuffer, nullptr);
+		vkFreeMemory(device, ivBufferMemory, nullptr);
 
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);

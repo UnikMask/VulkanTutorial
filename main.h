@@ -26,7 +26,7 @@ const std::vector<const char *> validationLayers = {
 
 const uint32_t HEIGHT = 480;
 const uint32_t WIDTH = 640;
-const int MAX_FRAMES_IN_FLIGHT = 100;
+const int MAX_FRAMES_IN_FLIGHT = 2;
 
 // Application Information //
 
