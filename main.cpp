@@ -115,7 +115,10 @@ class HelloTriangleApplication {
 
 	// Buffers //
 	VkBuffer vertexBuffer;
+	VkBuffer indexBuffer;
+
 	VkDeviceMemory vertexBufferMemory;
+	VkDeviceMemory indexBufferMemory;
 
 	////////////////////
 	// Initialization //
@@ -141,7 +144,10 @@ class HelloTriangleApplication {
 		// Buffers
 		createFramebuffers();
 		createCommandPool();
+
 		createVertexBuffer();
+		createIndexBuffer();
+
 		createCommandBuffers();
 	}
 
@@ -1103,11 +1109,13 @@ class HelloTriangleApplication {
 		VkBuffer vertexBuffers[]{vertexBuffer};
 		VkDeviceSize offsets[] = {0};
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+		vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0,
+							 VK_INDEX_TYPE_UINT16);
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-		vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0,
-				  0);
+		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()),
+						 1, 0, 0, 0);
 		vkCmdEndRenderPass(commandBuffer);
 		res = vkEndCommandBuffer(commandBuffer);
 		switch (res) {
@@ -1163,6 +1171,41 @@ class HelloTriangleApplication {
 	// Buffers //
 	/////////////
 
+	void createVertexBuffer() {
+		createStagedBuffer(sizeof(Vertex) * vertices.size(),
+						   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertexBuffer,
+						   vertexBufferMemory, vertices.data());
+	}
+
+	void createIndexBuffer() {
+		createStagedBuffer(sizeof(uint16_t) * indices.size(),
+						   VK_BUFFER_USAGE_INDEX_BUFFER_BIT, indexBuffer,
+						   indexBufferMemory, indices.data());
+	}
+
+	void createStagedBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+							VkBuffer &buffer, VkDeviceMemory &mem,
+							const void *src) {
+		// Create staging buffer
+		VkBuffer stagingBuffer;
+		VkDeviceMemory stagingBufferMemory;
+		createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+					 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+						 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+					 stagingBuffer, stagingBufferMemory);
+		void *data;
+		vkMapMemory(device, stagingBufferMemory, 0, size, 0, &data);
+		memcpy(data, src, size);
+		vkUnmapMemory(device, stagingBufferMemory);
+
+		// Create buffer and copy staging buffer data
+		createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+					 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, mem);
+		copyBuffer(stagingBuffer, buffer, size);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, stagingBufferMemory, nullptr);
+	}
+
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
 					  VkMemoryPropertyFlags flags, VkBuffer &buffer,
 					  VkDeviceMemory &bufferMemory) {
@@ -1208,31 +1251,6 @@ class HelloTriangleApplication {
 			throw std::runtime_error(std::string(ERROR_ALLOCATE_MEMORY_BUFFER));
 		}
 		vkBindBufferMemory(device, buffer, bufferMemory, 0);
-	}
-
-	void createVertexBuffer() {
-		VkDeviceSize bufferSize = sizeof(Vertex) * vertices.size();
-
-		// Make staging buffer and copy vertex data onto it.
-		VkBuffer stagingBuffer;
-		VkDeviceMemory stagingBufferMemory;
-		createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-					 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-						 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-					 stagingBuffer, stagingBufferMemory);
-		void *data;
-		vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-		memcpy(data, vertices.data(), bufferSize);
-		vkUnmapMemory(device, stagingBufferMemory);
-
-		createBuffer(bufferSize,
-					 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-						 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-					 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer,
-					 vertexBufferMemory);
-		copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-		vkDestroyBuffer(device, stagingBuffer, nullptr);
-		vkFreeMemory(device, stagingBufferMemory, nullptr);
 	}
 
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
@@ -1403,7 +1421,9 @@ class HelloTriangleApplication {
 	void cleanup() {
 		cleanupSwapChain();
 		vkDestroyBuffer(device, vertexBuffer, nullptr);
+		vkDestroyBuffer(device, indexBuffer, nullptr);
 		vkFreeMemory(device, vertexBufferMemory, nullptr);
+		vkFreeMemory(device, indexBufferMemory, nullptr);
 
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
