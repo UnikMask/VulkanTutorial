@@ -1,4 +1,5 @@
 #include <array>
+#include <optional>
 #include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -65,6 +66,26 @@ const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 									  {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
 									  {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
 
+// Queues & Queue Families //
+
+struct QueueFamilyIndices {
+	std::optional<uint32_t> graphicsFamily;
+	std::optional<uint32_t> presentFamily;
+	std::optional<uint32_t> transferFamily;
+
+	bool isComplete() {
+		return graphicsFamily.has_value() && presentFamily.has_value() &&
+			   transferFamily.has_value();
+	}
+};
+
+struct SelectFamilyInfo {
+	int graphicsDo;
+	int graphicsDont;
+	int transferDo;
+	int transferDont;
+};
+
 // Errors //
 
 #define VK_CREATE_INSTANCE_ERROR " - Failed to create instance!"
@@ -109,7 +130,6 @@ const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 #define ERROR_ACQUIRE_NEXT_IMAGE_KHR "Failed to acquire swap chain image!"
 #define ERROR_QUEUE_PRESENT_KHR "Failed to present swap chain image!"
 
-#define ERROR_CREATE_BUFFER_VERTEX "Failed to create vertex buffer!"
+#define ERROR_CREATE_BUFFER "Failed to create buffer!"
 #define ERROR_FIND_MEMORY_TYPE_SUITABLE "Failed to find suitable memory type!"
-#define ERROR_ALLOCATE_MEMORY_VERTEX_BUFFER                                    \
-	"Failed to allocate vertex buffer memory!"
+#define ERROR_ALLOCATE_MEMORY_BUFFER "Failed to allocate buffer memory!"

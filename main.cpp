@@ -82,6 +82,7 @@ class HelloTriangleApplication {
 	// Queue Families //
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
+	VkQueue transferQueue;
 
 	// Swap Chains //
 	VkSurfaceKHR surface;
@@ -100,13 +101,15 @@ class HelloTriangleApplication {
 
 	// Drawing //
 	std::vector<VkFramebuffer> swapChainFramebuffers;
-	VkCommandPool commandPool;
+	VkCommandPool graphicsPool;
+	VkCommandPool transferPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 
 	// Synchronisation //
 	std::vector<VkSemaphore> imageAvailableSemaphores;
 	std::vector<VkSemaphore> renderFinishedSemaphores;
 	std::vector<VkFence> inFlightFences;
+	VkFence transferFence;
 	bool framebufferResized = false; // Force image resizing
 	uint32_t currentFrame = 0;		 // Frames-in-flight feature
 
@@ -123,10 +126,11 @@ class HelloTriangleApplication {
 		createInstance();
 		setupDebugMessenger();
 
-		// Presentation
+		// Devices and syncs
 		createSurface();
 		pickPhysicalDevice();
 		createLogicalDevice();
+		createSyncObjects();
 
 		// Graphics Pipeline
 		createSwapChain();
@@ -134,12 +138,11 @@ class HelloTriangleApplication {
 		createRenderPass();
 		createGraphicsPipeline();
 
-		// Drawing
+		// Buffers
 		createFramebuffers();
 		createCommandPool();
 		createVertexBuffer();
 		createCommandBuffers();
-		createSyncObjects();
 	}
 
 	void initWindow() {
@@ -315,48 +318,63 @@ class HelloTriangleApplication {
 	// Queue Families //
 	////////////////////
 
-	struct QueueFamilyIndices {
-		std::optional<uint32_t> graphicsFamily;
-		std::optional<uint32_t> presentFamily;
-
-		bool isComplete() {
-			return graphicsFamily.has_value() && presentFamily.has_value();
-		}
-	};
-
 	QueueFamilyIndices
-	selectFamily(std::vector<VkQueueFamilyProperties> queueFamilies,
-				 VkPhysicalDevice device, int flags) {
+	selectFamilies(std::vector<VkQueueFamilyProperties> queueFamilies,
+				   VkPhysicalDevice device, SelectFamilyInfo *info) {
 		QueueFamilyIndices res;
 
 		int i = 0;
 		for (const auto &qf : queueFamilies) {
-			if (qf.queueFlags & flags) {
+			if (!res.graphicsFamily.has_value() &&
+				qf.queueFlags & info->graphicsDo &&
+				!(qf.queueFlags & info->graphicsDont)) {
 				res.graphicsFamily = i;
 			}
 			VkBool32 presentSupport = false;
 			int result = vkGetPhysicalDeviceSurfaceSupportKHR(
 				device, i, surface, &presentSupport);
-			if (presentSupport) {
+			if (!res.presentFamily.has_value() && presentSupport) {
 				res.presentFamily = i;
 			}
+			if (!res.transferFamily.has_value() &&
+				qf.queueFlags & info->transferDo &&
+				!(qf.queueFlags & info->transferDont)) {
+				res.transferFamily = i;
+			}
 			if (res.isComplete()) {
-				break;
+				return res;
 			}
 			i++;
+		}
+
+		// Fallback for transfer
+		for (size_t i = 0; i < queueFamilies.size(); i++) {
+			auto &qf = queueFamilies[i];
+			if (qf.queueFlags & info->transferDo) {
+				res.transferFamily = i;
+			}
+			if (res.transferFamily.has_value()) {
+				return res;
+			}
 		}
 		return res;
 	}
 
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
-		QueueFamilyIndices indices;
 		uint32_t familyCount = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(device, &familyCount, nullptr);
 		std::vector<VkQueueFamilyProperties> queueFamilies(familyCount);
 		vkGetPhysicalDeviceQueueFamilyProperties(device, &familyCount,
 												 queueFamilies.data());
 
-		return selectFamily(queueFamilies, device, VK_QUEUE_GRAPHICS_BIT);
+		SelectFamilyInfo familyInfo{
+			.graphicsDo = VK_QUEUE_GRAPHICS_BIT,
+			.graphicsDont = 0,
+			.transferDo = VK_QUEUE_TRANSFER_BIT,
+			.transferDont = VK_QUEUE_GRAPHICS_BIT,
+		};
+
+		return selectFamilies(queueFamilies, device, &familyInfo);
 	}
 
 	//////////////////////
@@ -460,7 +478,8 @@ class HelloTriangleApplication {
 		std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
 		std::set<uint32_t> uniqueQueueFamilies = {
-			indices.graphicsFamily.value(), indices.presentFamily.value()};
+			indices.graphicsFamily.value(), indices.presentFamily.value(),
+			indices.transferFamily.value()};
 
 		for (uint32_t queueFamily : uniqueQueueFamilies) {
 			VkDeviceQueueCreateInfo queueCreateInfo{
@@ -502,6 +521,8 @@ class HelloTriangleApplication {
 						 &graphicsQueue);
 		vkGetDeviceQueue(device, indices.presentFamily.value(), 0,
 						 &presentQueue);
+		vkGetDeviceQueue(device, indices.presentFamily.value(), 0,
+						 &transferQueue);
 	}
 
 	////////////////
@@ -995,13 +1016,27 @@ class HelloTriangleApplication {
 		QueueFamilyIndices queueFamilyIndices =
 			findQueueFamilies(physicalDevice);
 
-		VkCommandPoolCreateInfo poolInfo{
+		VkCommandPoolCreateInfo graphicsPoolInfo{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
 			.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(),
 		};
+		VkCommandPoolCreateInfo transferPoolInfo{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+			.queueFamilyIndex = queueFamilyIndices.transferFamily.value(),
+		};
 
-		int res = vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool);
+		int res = vkCreateCommandPool(device, &graphicsPoolInfo, nullptr,
+									  &graphicsPool);
+		switch (res) {
+		case VK_SUCCESS:
+			break;
+		default:
+			throw std::runtime_error(std::string(ERROR_CREATE_COMMAND_POOL));
+		}
+		res = vkCreateCommandPool(device, &transferPoolInfo, nullptr,
+								  &transferPool);
 		switch (res) {
 		case VK_SUCCESS:
 			break;
@@ -1014,7 +1049,7 @@ class HelloTriangleApplication {
 		commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 		VkCommandBufferAllocateInfo allocInfo{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			.commandPool = commandPool,
+			.commandPool = graphicsPool,
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = (uint32_t)commandBuffers.size(),
 		};
@@ -1100,6 +1135,7 @@ class HelloTriangleApplication {
 			.flags = VK_FENCE_CREATE_SIGNALED_BIT,
 		};
 
+		// Create rendering and presentation sync objects
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			if (vkCreateSemaphore(device, &semaphoreInfo, nullptr,
 								  &imageAvailableSemaphores[i]) != VK_SUCCESS ||
@@ -1110,54 +1146,129 @@ class HelloTriangleApplication {
 				throw std::runtime_error(std::string(ERROR_CREATE_SYNC));
 			}
 		}
+		// Create transfer fences
+		vkCreateFence(device, &fenceInfo, nullptr, &transferFence);
+	}
+
+	void cleanupSyncObjects() {
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+			vkDestroyFence(device, inFlightFences[i], nullptr);
+		}
+		vkDestroyFence(device, transferFence, nullptr);
 	}
 
 	/////////////
 	// Buffers //
 	/////////////
 
-	void createVertexBuffer() {
+	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+					  VkMemoryPropertyFlags flags, VkBuffer &buffer,
+					  VkDeviceMemory &bufferMemory) {
 		VkBufferCreateInfo bufferInfo{
 			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.size = sizeof(Vertex) * vertices.size(),
-			.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			.size = size,
+			.usage = usage,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 		};
 
-		int res = vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer);
+		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+		uint32_t queueFamilies[] = {indices.graphicsFamily.value(),
+									indices.presentFamily.value()};
+
+		if (indices.graphicsFamily != indices.presentFamily) {
+			bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+			bufferInfo.queueFamilyIndexCount = 2;
+			bufferInfo.pQueueFamilyIndices = queueFamilies;
+		}
+
+		int res = vkCreateBuffer(device, &bufferInfo, nullptr, &buffer);
 		switch (res) {
 		case VK_SUCCESS:
 			break;
 		default:
-			throw std::runtime_error(std::string(ERROR_CREATE_BUFFER_VERTEX));
+			throw std::runtime_error(std::string(ERROR_CREATE_BUFFER));
 		}
 
 		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+		vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
 		VkMemoryAllocateInfo allocInfo{
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 			.allocationSize = memRequirements.size,
 			.memoryTypeIndex =
-				findMemoryType(memRequirements.memoryTypeBits,
-							   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-								   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+				findMemoryType(memRequirements.memoryTypeBits, flags),
 		};
-		res =
-			vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory);
+		res = vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory);
 		switch (res) {
 		case VK_SUCCESS:
 			break;
 		default:
-			throw std::runtime_error(
-				std::string(ERROR_ALLOCATE_MEMORY_VERTEX_BUFFER));
+			throw std::runtime_error(std::string(ERROR_ALLOCATE_MEMORY_BUFFER));
 		}
-		vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+		vkBindBufferMemory(device, buffer, bufferMemory, 0);
+	}
 
-		// Copy vertex data to buffer
+	void createVertexBuffer() {
+		VkDeviceSize bufferSize = sizeof(Vertex) * vertices.size();
+
+		// Make staging buffer and copy vertex data onto it.
+		VkBuffer stagingBuffer;
+		VkDeviceMemory stagingBufferMemory;
+		createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+					 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+						 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+					 stagingBuffer, stagingBufferMemory);
 		void *data;
-		vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-		memcpy(data, vertices.data(), (size_t)bufferInfo.size);
-		vkUnmapMemory(device, vertexBufferMemory);
+		vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+		memcpy(data, vertices.data(), bufferSize);
+		vkUnmapMemory(device, stagingBufferMemory);
+
+		createBuffer(bufferSize,
+					 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+						 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+					 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer,
+					 vertexBufferMemory);
+		copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, stagingBufferMemory, nullptr);
+	}
+
+	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+		VkCommandBufferAllocateInfo allocInfo{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.commandPool = transferPool,
+			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = 1,
+		};
+
+		VkCommandBuffer transferBuffer;
+		vkAllocateCommandBuffers(device, &allocInfo, &transferBuffer);
+
+		VkCommandBufferBeginInfo beginInfo{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+			.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+		};
+		vkBeginCommandBuffer(transferBuffer, &beginInfo);
+
+		VkBufferCopy copyRegion{
+			.srcOffset = 0,
+			.dstOffset = 0,
+			.size = size,
+		};
+		vkCmdCopyBuffer(transferBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+		vkEndCommandBuffer(transferBuffer);
+
+		VkSubmitInfo submitInfo{
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+			.commandBufferCount = 1,
+			.pCommandBuffers = &transferBuffer,
+		};
+		vkResetFences(device, 1, &transferFence);
+		vkQueueSubmit(transferQueue, 1, &submitInfo, transferFence);
+		vkWaitForFences(device, 1, &transferFence, VK_TRUE, UINT64_MAX);
+		vkFreeCommandBuffers(device, transferPool, 1, &transferBuffer);
 	}
 
 	uint32_t findMemoryType(uint32_t typeFilter,
@@ -1247,7 +1358,7 @@ class HelloTriangleApplication {
 			.pImageIndices = &imageIndex,
 			.pResults = nullptr,
 		};
-		res = vkQueuePresentKHR(graphicsQueue, &presentInfo);
+		res = vkQueuePresentKHR(presentQueue, &presentInfo);
 		if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR ||
 			framebufferResized) {
 			framebufferResized = false;
@@ -1298,12 +1409,10 @@ class HelloTriangleApplication {
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
 
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-			vkDestroyFence(device, inFlightFences[i], nullptr);
-		}
-		vkDestroyCommandPool(device, commandPool, nullptr);
+		cleanupSyncObjects();
+
+		vkDestroyCommandPool(device, graphicsPool, nullptr);
+		vkDestroyCommandPool(device, transferPool, nullptr);
 		vkDestroyDevice(device, nullptr);
 
 		if (enableValidationLayers) {
