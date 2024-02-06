@@ -7,6 +7,7 @@ project("VulkanTutorial" VERSION "0.1.0" DESCRIPTION "My work on the vulkan tuto
 
 set(GLM_ENABLE_CXX_20 "ON")
 set(GLFW_BUILD_WAYLAND "ON")
+set(GLFW_BUILD_X11 "ON")
 find_package(Vulkan REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 FetchContent_Declare(

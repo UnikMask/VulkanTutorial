@@ -110,6 +110,10 @@ class HelloTriangleApplication {
 	bool framebufferResized = false; // Force image resizing
 	uint32_t currentFrame = 0;		 // Frames-in-flight feature
 
+	// Buffers //
+	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferMemory;
+
 	////////////////////
 	// Initialization //
 	////////////////////
@@ -133,22 +137,21 @@ class HelloTriangleApplication {
 		// Drawing
 		createFramebuffers();
 		createCommandPool();
+		createVertexBuffer();
 		createCommandBuffers();
 		createSyncObjects();
 	}
 
 	void initWindow() {
-		// if (glfwPlatformSupported(GLFW_PLATFORM_WAYLAND)) {
-		//   glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
-		// } else {
 		glfwInitHint(GLFW_PLATFORM, GLFW_ANY_PLATFORM);
-		// }
 		glfwInit();
 
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHintString(GLFW_X11_CLASS_NAME, "vulkan_tutorial");
 		glfwWindowHintString(GLFW_WAYLAND_APP_ID, WAYLAND_APP_ID);
+		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 		glfwWindowHint(GLFW_REFRESH_RATE, 60);
+
 		window = glfwCreateWindow(WIDTH, HEIGHT, WINDOW_NAME, nullptr, nullptr);
 		glfwSetWindowUserPointer(window, this);
 		glfwSetFramebufferSizeCallback(
@@ -332,8 +335,8 @@ class HelloTriangleApplication {
 				res.graphicsFamily = i;
 			}
 			VkBool32 presentSupport = false;
-			vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface,
-												 &presentSupport);
+			int result = vkGetPhysicalDeviceSurfaceSupportKHR(
+				device, i, surface, &presentSupport);
 			if (presentSupport) {
 				res.presentFamily = i;
 			}
@@ -513,11 +516,25 @@ class HelloTriangleApplication {
 
 	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice dev) {
 		SwapChainSupportDetails details;
-		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev, surface,
-												  &details.capabilities);
+		int res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+			dev, surface, &details.capabilities);
+
 		uint32_t formatCount;
-		vkGetPhysicalDeviceSurfaceFormatsKHR(dev, surface, &formatCount,
-											 nullptr);
+		res = vkGetPhysicalDeviceSurfaceFormatsKHR(dev, surface, &formatCount,
+												   nullptr);
+		switch (res) {
+		case VK_SUCCESS:
+			break;
+		case VK_ERROR_OUT_OF_HOST_MEMORY:
+			throw std::runtime_error(
+				"Error fetching available surface format: Out of host memory");
+		case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+			throw std::runtime_error("Error fetching available surface format: "
+									 "Out of device memory");
+		case VK_ERROR_SURFACE_LOST_KHR:
+			throw std::runtime_error("Error fetching available surface format: "
+									 "Surface has been lost");
+		}
 		if (formatCount != 0) {
 			details.formats.resize(formatCount);
 			vkGetPhysicalDeviceSurfaceFormatsKHR(dev, surface, &formatCount,
@@ -557,7 +574,7 @@ class HelloTriangleApplication {
 				return *found;
 			}
 		}
-		return presentModes[0];
+		return VK_PRESENT_MODE_FIFO_KHR;
 	}
 
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
@@ -606,12 +623,11 @@ class HelloTriangleApplication {
 			.imageArrayLayers = 1,
 			.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 			.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.queueFamilyIndexCount = 0,
-			.pQueueFamilyIndices = nullptr,
 			.preTransform = swapChainSupport.capabilities.currentTransform,
 			.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
 			.presentMode = presentMode,
 			.clipped = VK_TRUE,
+			.oldSwapchain = VK_NULL_HANDLE,
 		};
 
 		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
@@ -635,6 +651,12 @@ class HelloTriangleApplication {
 
 		case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR:
 			throw std::runtime_error(std::string(ERROR_WINDOW_IN_USE) +
+									 std::string(ERROR_CREATE_SWAPCHAIN));
+		case VK_ERROR_SURFACE_LOST_KHR:
+			throw std::runtime_error("Surface lost: " +
+									 std::string(ERROR_CREATE_SWAPCHAIN));
+		default:
+			throw std::runtime_error("Unknown error occured: " +
 									 std::string(ERROR_CREATE_SWAPCHAIN));
 		}
 
@@ -777,7 +799,8 @@ class HelloTriangleApplication {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
 			.vertexBindingDescriptionCount = 1,
 			.pVertexBindingDescriptions = &bindingDescription,
-			.vertexAttributeDescriptionCount = 1,
+			.vertexAttributeDescriptionCount =
+				static_cast<uint32_t>(attributeDescriptions.size()),
 			.pVertexAttributeDescriptions = attributeDescriptions.data(),
 		};
 
@@ -1041,9 +1064,19 @@ class HelloTriangleApplication {
 							 VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 						  graphicsPipeline);
+
+		VkBuffer vertexBuffers[]{vertexBuffer};
+		VkDeviceSize offsets[] = {0};
+		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
+		viewport.width = static_cast<float>(swapChainExtent.width);
+		viewport.height = static_cast<float>(swapChainExtent.height);
+		scissor.extent = swapChainExtent;
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-		vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+		vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0,
+				  0);
 		vkCmdEndRenderPass(commandBuffer);
 		res = vkEndCommandBuffer(commandBuffer);
 		switch (res) {
@@ -1081,6 +1114,68 @@ class HelloTriangleApplication {
 				throw std::runtime_error(std::string(ERROR_CREATE_SYNC));
 			}
 		}
+	}
+
+	/////////////
+	// Buffers //
+	/////////////
+
+	void createVertexBuffer() {
+		VkBufferCreateInfo bufferInfo{
+			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			.size = sizeof(Vertex) * vertices.size(),
+			.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		};
+
+		int res = vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer);
+		switch (res) {
+		case VK_SUCCESS:
+			break;
+		default:
+			throw std::runtime_error(std::string(ERROR_CREATE_BUFFER_VERTEX));
+		}
+
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+		VkMemoryAllocateInfo allocInfo{
+			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+			.allocationSize = memRequirements.size,
+			.memoryTypeIndex =
+				findMemoryType(memRequirements.memoryTypeBits,
+							   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+								   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+		};
+		res =
+			vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory);
+		switch (res) {
+		case VK_SUCCESS:
+			break;
+		default:
+			throw std::runtime_error(
+				std::string(ERROR_ALLOCATE_MEMORY_VERTEX_BUFFER));
+		}
+		vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+		// Copy vertex data to buffer
+		void *data;
+		vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+		memcpy(data, vertices.data(), (size_t)bufferInfo.size);
+		vkUnmapMemory(device, vertexBufferMemory);
+	}
+
+	uint32_t findMemoryType(uint32_t typeFilter,
+							VkMemoryPropertyFlags properties) {
+		VkPhysicalDeviceMemoryProperties memProperties;
+		vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+		for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+			if (typeFilter & (1 << i) &&
+				(memProperties.memoryTypes[i].propertyFlags & properties) ==
+					properties) {
+				return i;
+			}
+		}
+		throw std::runtime_error(std::string(ERROR_FIND_MEMORY_TYPE_SUITABLE));
 	}
 
 	//////////
@@ -1156,7 +1251,7 @@ class HelloTriangleApplication {
 			framebufferResized) {
 			framebufferResized = false;
 			recreateSwapChain();
-		} else if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
+		} else if (res != VK_SUCCESS) {
 			throw std::runtime_error(std::string(ERROR_QUEUE_PRESENT_KHR));
 		}
 		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -1167,10 +1262,10 @@ class HelloTriangleApplication {
 	/////////////
 
 	void cleanupSwapChain() {
-		for (auto framebuffer : swapChainFramebuffers) {
-			vkDestroyFramebuffer(device, framebuffer, nullptr);
+		for (VkFramebuffer fb : swapChainFramebuffers) {
+			vkDestroyFramebuffer(device, fb, nullptr);
 		}
-		for (auto imageView : swapChainImageViews) {
+		for (VkImageView imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
@@ -1195,15 +1290,19 @@ class HelloTriangleApplication {
 
 	void cleanup() {
 		cleanupSwapChain();
+		vkDestroyBuffer(device, vertexBuffer, nullptr);
+		vkFreeMemory(device, vertexBufferMemory, nullptr);
+
+		vkDestroyPipeline(device, graphicsPipeline, nullptr);
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyRenderPass(device, renderPass, nullptr);
+
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
 			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
 			vkDestroyFence(device, inFlightFences[i], nullptr);
 		}
 		vkDestroyCommandPool(device, commandPool, nullptr);
-		vkDestroyPipeline(device, graphicsPipeline, nullptr);
-		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-		vkDestroyRenderPass(device, renderPass, nullptr);
 		vkDestroyDevice(device, nullptr);
 
 		if (enableValidationLayers) {

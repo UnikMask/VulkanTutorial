@@ -25,7 +25,7 @@ const std::vector<const char *> validationLayers = {
 
 const uint32_t HEIGHT = 1080;
 const uint32_t WIDTH = 1920;
-const int MAX_FRAMES_IN_FLIGHT = 100;
+const int MAX_FRAMES_IN_FLIGHT = 2;
 
 // Application Information //
 
@@ -108,3 +108,8 @@ const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 
 #define ERROR_ACQUIRE_NEXT_IMAGE_KHR "Failed to acquire swap chain image!"
 #define ERROR_QUEUE_PRESENT_KHR "Failed to present swap chain image!"
+
+#define ERROR_CREATE_BUFFER_VERTEX "Failed to create vertex buffer!"
+#define ERROR_FIND_MEMORY_TYPE_SUITABLE "Failed to find suitable memory type!"
+#define ERROR_ALLOCATE_MEMORY_VERTEX_BUFFER                                    \
+	"Failed to allocate vertex buffer memory!"
