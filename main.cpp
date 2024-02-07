@@ -18,12 +18,9 @@
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
-#include <glm/glm.hpp>
+#include "main.h"
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "glm/ext/matrix_clip_space.hpp"
-#include "glm/ext/matrix_transform.hpp"
-#include "main.h"
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -127,7 +124,7 @@ class HelloTriangleApplication {
 	VkDeviceSize indicesOffset;
 
 	// Uniforms //
-	VkBuffer uniformBuffer;
+	std::vector<VkBuffer> uniformBuffers;
 	VkDeviceMemory uniformBufferMemory;
 	std::vector<VkDeviceSize> uniformBufferOffsets;
 	UniformBufferObject *uniformBufferMap;
@@ -1298,7 +1295,10 @@ class HelloTriangleApplication {
 						  fullReqs.memoryTypeBits |= req.memoryTypeBits;
 						  fullReqs.alignment =
 							  std::max(req.alignment, fullReqs.alignment);
+						  std::cout << "Buffer  size: " << req.size
+									<< std::endl;
 					  });
+		std::cout << "Full Requirements size: " << fullReqs.size << std::endl;
 
 		VkMemoryAllocateInfo allocInfo{
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -1403,14 +1403,18 @@ class HelloTriangleApplication {
 	}
 
 	void createUniformBuffer() {
-		VkDeviceSize bufferc =
-			sizeof(UniformBufferObject) * MAX_FRAMES_IN_FLIGHT;
+		VkDeviceSize bufferc = sizeof(UniformBufferObject);
+		std::cout << "UBO size: " << sizeof(UniformBufferObject) << std::endl;
+		uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
-		createBuffer(bufferc, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-					 uniformBuffer);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			createBuffer(bufferc, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+						 uniformBuffers[i]);
+		}
+
 		allocateBuffers(AllocateBuffersInfo{
-			.buffersCount = 1,
-			.pBuffers = &uniformBuffer,
+			.buffersCount = MAX_FRAMES_IN_FLIGHT,
+			.pBuffers = uniformBuffers.data(),
 			.bufferMemory = &uniformBufferMemory,
 			.memoryPropertyflags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 								   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -1469,8 +1473,8 @@ class HelloTriangleApplication {
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			VkDescriptorBufferInfo buffInfo{
-				.buffer = uniformBuffer,
-				.offset = uniformBufferOffsets[i],
+				.buffer = uniformBuffers[i],
+				.offset = 0,
 				.range = sizeof(UniformBufferObject),
 			};
 
@@ -1643,7 +1647,9 @@ class HelloTriangleApplication {
 
 		// Uniforms
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-		vkDestroyBuffer(device, uniformBuffer, nullptr);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+		}
 		vkFreeMemory(device, uniformBufferMemory, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
