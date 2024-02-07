@@ -45,6 +45,7 @@ const VkApplicationInfo APP_INFO{
 
 const std::vector<const char *> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+	VK_KHR_MAINTENANCE_1_EXTENSION_NAME,
 };
 
 #define SWAP_SURFACE_TARGET_FORMAT VK_FORMAT_B8G8R8A8_SRGB

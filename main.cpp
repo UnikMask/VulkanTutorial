@@ -855,9 +855,9 @@ class HelloTriangleApplication {
 		// Setup viewport and scissor
 		viewport = {
 			.x = 0.0f,
-			.y = 0.0f,
+			.y = (float)swapChainExtent.height,
 			.width = (float)swapChainExtent.width,
-			.height = (float)swapChainExtent.height,
+			.height = -(float)swapChainExtent.height,
 			.minDepth = 0.0f,
 			.maxDepth = 1.0f,
 		};
@@ -889,7 +889,7 @@ class HelloTriangleApplication {
 			.rasterizerDiscardEnable = VK_FALSE,
 			.polygonMode = VK_POLYGON_MODE_FILL,
 			.cullMode = VK_CULL_MODE_BACK_BIT,
-			.frontFace = VK_FRONT_FACE_CLOCKWISE,
+			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 			.depthBiasEnable = VK_FALSE,
 			// optional
 			.depthBiasConstantFactor = 0.0f,
@@ -1524,9 +1524,9 @@ class HelloTriangleApplication {
 		UniformBufferObject ubo{
 			.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
 								 glm::vec3(0.0f, 1.0f, 0.0f)),
-			.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
-								glm::vec3(0.0f, 0.0f, 0.0f),
-								glm::vec3(0.0f, -1.0f, 0.0f)),
+			.view = glm::lookAtRH(glm::vec3(2.0f, 2.0f, 2.0f),
+								  glm::vec3(0.0f, 0.0f, 0.0f),
+								  glm::vec3(0.0f, 1.0f, 0.0f)),
 			.proj = glm::perspective(glm::radians(45.0f),
 									 swapChainExtent.width /
 										 (float)swapChainExtent.height,
@@ -1577,8 +1577,9 @@ class HelloTriangleApplication {
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 		// Resize viewport and scissor to current frame size
-		viewport.width = static_cast<float>(swapChainExtent.width);
-		viewport.height = static_cast<float>(swapChainExtent.height);
+		viewport.width = (float)swapChainExtent.width;
+		viewport.height = -(float)swapChainExtent.height;
+		viewport.y = (float)swapChainExtent.height;
 		scissor.extent = swapChainExtent;
 		updateUniformBuffer(currentFrame);
 
