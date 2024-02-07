@@ -1,3 +1,4 @@
+#include "glm/fwd.hpp"
 #include <array>
 #include <optional>
 #include <vulkan/vulkan_core.h>
@@ -53,6 +54,7 @@ const std::vector<VkPresentModeKHR> presentModeOrder = {
 	VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_FIFO_RELAXED_KHR};
 
 // Shader Objects //
+
 struct Vertex {
 	glm::vec2 pos;
 	glm::vec3 color;
@@ -60,6 +62,12 @@ struct Vertex {
 	static VkVertexInputBindingDescription getBindingDescription();
 	static std::array<VkVertexInputAttributeDescription, 2>
 	getAttributeDescriptions();
+};
+
+struct UniformBufferObject {
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
 };
 
 const std::vector<Vertex> vertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
@@ -137,3 +145,6 @@ struct SelectFamilyInfo {
 #define ERROR_CREATE_BUFFER "Failed to create buffer!"
 #define ERROR_FIND_MEMORY_TYPE_SUITABLE "Failed to find suitable memory type!"
 #define ERROR_ALLOCATE_MEMORY_BUFFER "Failed to allocate buffer memory!"
+
+#define ERROR_CREATE_DESCRIPTOR_SET_LAYOUT                                     \
+	"Failed to create descriptor set layout!"

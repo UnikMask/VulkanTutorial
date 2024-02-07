@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -17,6 +18,11 @@
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include "glm/ext/matrix_clip_space.hpp"
+#include "glm/ext/matrix_transform.hpp"
 #include "main.h"
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -94,6 +100,7 @@ class HelloTriangleApplication {
 
 	// Graphics Pipeline //
 	VkRenderPass renderPass;
+	VkDescriptorSetLayout descriptorSetLayout;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 	VkViewport viewport;
@@ -118,6 +125,10 @@ class HelloTriangleApplication {
 	VkDeviceMemory ivBufferMemory;
 	VkDeviceSize verticesOffset;
 	VkDeviceSize indicesOffset;
+	VkBuffer uniformBuffer;
+	VkDeviceMemory uniformBufferMemory;
+	std::vector<VkDeviceSize> uniformBufferOffsets;
+	std::vector<void *> uniformBufferMapped;
 
 	////////////////////
 	// Initialization //
@@ -145,6 +156,7 @@ class HelloTriangleApplication {
 		createCommandPool();
 
 		createIVBuffer();
+		createUniformsBuffer();
 
 		createCommandBuffers();
 	}
@@ -917,6 +929,8 @@ class HelloTriangleApplication {
 		// Create empty pipeline layout - useful later on for uniform buffers.
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo{
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = 1,
+			.pSetLayouts = &descriptorSetLayout,
 		};
 		int res = vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
 										 &pipelineLayout);
@@ -1170,10 +1184,10 @@ class HelloTriangleApplication {
 
 	void createIVBuffer() {
 		VkDeviceSize verticesSize = sizeof(Vertex) * vertices.size();
-		VkDeviceSize indicesSize = sizeof(uint16_t) * indices.size();
-		VkDeviceSize bufferSize = verticesSize + indicesSize;
 		verticesOffset = 0;
-		indicesOffset = verticesSize;
+		VkDeviceSize indicesSize = sizeof(uint16_t) * indices.size();
+		indicesOffset = verticesOffset + verticesSize;
+		VkDeviceSize bufferSize = verticesSize + indicesSize;
 
 		// Create staging buffer
 		VkBuffer stagingBuffer;
@@ -1182,8 +1196,11 @@ class HelloTriangleApplication {
 					 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 						 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 					 stagingBuffer, stagingBufferMemory);
+
+		// Copy vertex and index contents
 		void *data;
-		vkMapMemory(device, stagingBufferMemory, 0, verticesSize, 0, &data);
+		vkMapMemory(device, stagingBufferMemory, verticesOffset, verticesSize,
+					0, &data);
 		memcpy(data, vertices.data(), verticesSize);
 		vkUnmapMemory(device, stagingBufferMemory);
 
@@ -1199,6 +1216,12 @@ class HelloTriangleApplication {
 						 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 					 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, ivBuffer,
 					 ivBufferMemory);
+
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(device, ivBuffer, &memRequirements);
+		std::cout << "Memory Alignment: " << memRequirements.alignment
+				  << std::endl;
+
 		copyBuffer(stagingBuffer, ivBuffer, bufferSize);
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingBufferMemory, nullptr);
@@ -1298,7 +1321,79 @@ class HelloTriangleApplication {
 				return i;
 			}
 		}
-		throw std::runtime_error(std::string(ERROR_FIND_MEMORY_TYPE_SUITABLE));
+		throw std::runtime_error(ERROR_FIND_MEMORY_TYPE_SUITABLE);
+	}
+
+	//////////////
+	// Uniforms //
+	//////////////
+
+	void createDescriptorSetLayout() {
+		VkDescriptorSetLayoutBinding uboLayoutBinding{
+			.binding = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.descriptorCount = 1,
+			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+			.pImmutableSamplers = nullptr,
+		};
+
+		VkDescriptorSetLayoutCreateInfo layoutInfo{
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+			.bindingCount = 1,
+			.pBindings = &uboLayoutBinding,
+		};
+
+		int result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
+												 &descriptorSetLayout);
+		switch (result) {
+		case VK_SUCCESS:
+			break;
+		default:
+			throw std::runtime_error(ERROR_CREATE_DESCRIPTOR_SET_LAYOUT);
+		}
+	}
+
+	void createUniformsBuffer() {
+		VkDeviceSize bufferc =
+			sizeof(UniformBufferObject) * MAX_FRAMES_IN_FLIGHT;
+
+		createBuffer(bufferc, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+					 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+						 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+					 uniformBuffer, uniformBufferMemory);
+
+		uniformBufferMapped.resize(MAX_FRAMES_IN_FLIGHT);
+		uniformBufferOffsets.resize(MAX_FRAMES_IN_FLIGHT);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			uniformBufferOffsets[i] = sizeof(UniformBufferObject) * i;
+			vkMapMemory(device, uniformBufferMemory, uniformBufferOffsets[i],
+						sizeof(UniformBufferObject), 0,
+						&uniformBufferMapped[i]);
+		}
+	}
+
+	void updateUniformBuffer(uint32_t frame) {
+		static auto startTime = std::chrono::high_resolution_clock::now();
+
+		// Get current time for neat rotation effect
+		auto currentTime = std::chrono::high_resolution_clock::now();
+		float time = std::chrono::duration<float, std::chrono::seconds::period>(
+						 currentTime - startTime)
+						 .count();
+
+		// Fill ubo
+		UniformBufferObject ubo{
+			.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
+								 glm::vec3(0.0f, 0.0f, 1.0f)),
+			.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+								glm::vec3(0.0f, 0.0f, 0.0f),
+								glm::vec3(0.0f, 1.0f, 0.0f)),
+			.proj = glm::perspective(glm::radians(45.0f),
+									 swapChainExtent.width /
+										 (float)swapChainExtent.height,
+									 0.1f, 10.0f),
+		};
+		memcpy(uniformBufferMapped[frame], &ubo, sizeof(ubo));
 	}
 
 	//////////
@@ -1335,6 +1430,7 @@ class HelloTriangleApplication {
 		viewport.width = static_cast<float>(swapChainExtent.width);
 		viewport.height = static_cast<float>(swapChainExtent.height);
 		scissor.extent = swapChainExtent;
+		updateUniformBuffer(currentFrame);
 
 		// Reset and record command buffer on image index given.
 		vkResetCommandBuffer(commandBuffers[currentFrame], 0);
@@ -1418,9 +1514,17 @@ class HelloTriangleApplication {
 
 	void cleanup() {
 		cleanupSwapChain();
+
+		// Uniforms
+		vkDestroyBuffer(device, uniformBuffer, nullptr);
+		vkFreeMemory(device, uniformBufferMemory, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+
+		// Vertices/ Indices
 		vkDestroyBuffer(device, ivBuffer, nullptr);
 		vkFreeMemory(device, ivBufferMemory, nullptr);
 
+		// Graphics pipeline
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
@@ -1431,9 +1535,11 @@ class HelloTriangleApplication {
 		vkDestroyCommandPool(device, transferPool, nullptr);
 		vkDestroyDevice(device, nullptr);
 
+		// Extension/ layers
 		if (enableValidationLayers) {
 			DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 		}
+		// Window & surface
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyInstance(instance, nullptr);
 		glfwDestroyWindow(window);
