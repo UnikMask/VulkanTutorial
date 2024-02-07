@@ -120,15 +120,19 @@ class HelloTriangleApplication {
 	bool framebufferResized = false; // Force image resizing
 	uint32_t currentFrame = 0;		 // Frames-in-flight feature
 
-	// Buffers //
+	// Index/Vertex Buffers //
 	VkBuffer ivBuffer;
 	VkDeviceMemory ivBufferMemory;
 	VkDeviceSize verticesOffset;
 	VkDeviceSize indicesOffset;
+
+	// Uniforms //
 	VkBuffer uniformBuffer;
 	VkDeviceMemory uniformBufferMemory;
 	std::vector<VkDeviceSize> uniformBufferOffsets;
-	std::vector<void *> uniformBufferMapped;
+	UniformBufferObject *uniformBufferMap;
+	VkDescriptorPool descriptorPool;
+	std::vector<VkDescriptorSet> descriptorSets;
 
 	////////////////////
 	// Initialization //
@@ -149,6 +153,7 @@ class HelloTriangleApplication {
 		createSwapChain();
 		createImageView();
 		createRenderPass();
+		createDescriptorSetLayout();
 		createGraphicsPipeline();
 
 		// Buffers
@@ -156,7 +161,9 @@ class HelloTriangleApplication {
 		createCommandPool();
 
 		createIVBuffer();
-		createUniformsBuffer();
+		createUniformBuffer();
+		createDescriptorPool();
+		createDescriptorSets();
 
 		createCommandBuffers();
 	}
@@ -1118,13 +1125,16 @@ class HelloTriangleApplication {
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 						  graphicsPipeline);
 
-		VkDeviceSize offsets[] = {verticesOffset};
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivBuffer, offsets);
+		VkDeviceSize vertexOffsets[] = {verticesOffset};
+		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivBuffer, vertexOffsets);
 		vkCmdBindIndexBuffer(commandBuffer, ivBuffer, indicesOffset,
 							 VK_INDEX_TYPE_UINT16);
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+								pipelineLayout, 0, 1,
+								&descriptorSets[currentFrame], 0, nullptr);
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()),
 						 1, 0, 0, 0);
 		vkCmdEndRenderPass(commandBuffer);
@@ -1193,9 +1203,14 @@ class HelloTriangleApplication {
 		VkBuffer stagingBuffer;
 		VkDeviceMemory stagingBufferMemory;
 		createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-					 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-						 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-					 stagingBuffer, stagingBufferMemory);
+					 stagingBuffer);
+		allocateBuffers(AllocateBuffersInfo{
+			.buffersCount = 1,
+			.pBuffers = &stagingBuffer,
+			.bufferMemory = &stagingBufferMemory,
+			.memoryPropertyflags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+								   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		});
 
 		// Copy vertex and index contents
 		void *data;
@@ -1214,13 +1229,16 @@ class HelloTriangleApplication {
 					 VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 						 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
 						 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-					 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, ivBuffer,
-					 ivBufferMemory);
+					 ivBuffer);
+		allocateBuffers(AllocateBuffersInfo{
+			.buffersCount = 1,
+			.pBuffers = &ivBuffer,
+			.bufferMemory = &ivBufferMemory,
+			.memoryPropertyflags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		});
 
 		VkMemoryRequirements memRequirements;
 		vkGetBufferMemoryRequirements(device, ivBuffer, &memRequirements);
-		std::cout << "Memory Alignment: " << memRequirements.alignment
-				  << std::endl;
 
 		copyBuffer(stagingBuffer, ivBuffer, bufferSize);
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
@@ -1228,8 +1246,7 @@ class HelloTriangleApplication {
 	}
 
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-					  VkMemoryPropertyFlags flags, VkBuffer &buffer,
-					  VkDeviceMemory &bufferMemory) {
+					  VkBuffer &buffer) {
 		VkBufferCreateInfo bufferInfo{
 			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 			.size = size,
@@ -1254,24 +1271,55 @@ class HelloTriangleApplication {
 		default:
 			throw std::runtime_error(std::string(ERROR_CREATE_BUFFER));
 		}
+	}
 
-		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+	struct AllocateBuffersInfo {
+		uint16_t buffersCount;
+		VkBuffer *pBuffers;
+		VkDeviceMemory *bufferMemory;
+		VkMemoryPropertyFlags memoryPropertyflags;
+	};
+
+	void allocateBuffers(AllocateBuffersInfo info) {
+		std::vector<VkMemoryRequirements> requirements(MAX_FRAMES_IN_FLIGHT);
+		for (size_t i = 0; i < info.buffersCount; i++) {
+			vkGetBufferMemoryRequirements(device, info.pBuffers[i],
+										  &requirements[i]);
+		}
+
+		VkMemoryRequirements fullReqs{
+			.size = 0,
+			.alignment = 1,
+			.memoryTypeBits = 0,
+		};
+		std::for_each(requirements.begin(), requirements.end(),
+					  [&](VkMemoryRequirements req) {
+						  fullReqs.size += req.size;
+						  fullReqs.memoryTypeBits |= req.memoryTypeBits;
+						  fullReqs.alignment =
+							  std::max(req.alignment, fullReqs.alignment);
+					  });
 
 		VkMemoryAllocateInfo allocInfo{
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-			.allocationSize = memRequirements.size,
-			.memoryTypeIndex =
-				findMemoryType(memRequirements.memoryTypeBits, flags),
+			.allocationSize = fullReqs.size,
+			.memoryTypeIndex = findMemoryType(fullReqs.memoryTypeBits,
+											  info.memoryPropertyflags),
 		};
-		res = vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory);
-		switch (res) {
+		int result =
+			vkAllocateMemory(device, &allocInfo, nullptr, info.bufferMemory);
+		switch (result) {
 		case VK_SUCCESS:
 			break;
 		default:
 			throw std::runtime_error(std::string(ERROR_ALLOCATE_MEMORY_BUFFER));
 		}
-		vkBindBufferMemory(device, buffer, bufferMemory, 0);
+		VkDeviceSize offset = 0;
+		for (size_t i = 0; i < info.buffersCount; i++) {
+			vkBindBufferMemory(device, info.pBuffers[i], *info.bufferMemory,
+							   offset);
+			offset += requirements[i].size;
+		}
 	}
 
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
@@ -1312,6 +1360,7 @@ class HelloTriangleApplication {
 
 	uint32_t findMemoryType(uint32_t typeFilter,
 							VkMemoryPropertyFlags properties) {
+
 		VkPhysicalDeviceMemoryProperties memProperties;
 		vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 		for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
@@ -1353,22 +1402,88 @@ class HelloTriangleApplication {
 		}
 	}
 
-	void createUniformsBuffer() {
+	void createUniformBuffer() {
 		VkDeviceSize bufferc =
 			sizeof(UniformBufferObject) * MAX_FRAMES_IN_FLIGHT;
 
 		createBuffer(bufferc, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-					 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-						 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-					 uniformBuffer, uniformBufferMemory);
+					 uniformBuffer);
+		allocateBuffers(AllocateBuffersInfo{
+			.buffersCount = 1,
+			.pBuffers = &uniformBuffer,
+			.bufferMemory = &uniformBufferMemory,
+			.memoryPropertyflags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+								   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		});
 
-		uniformBufferMapped.resize(MAX_FRAMES_IN_FLIGHT);
 		uniformBufferOffsets.resize(MAX_FRAMES_IN_FLIGHT);
+		vkMapMemory(device, uniformBufferMemory, 0, bufferc, 0,
+					(void **)&uniformBufferMap);
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			uniformBufferOffsets[i] = sizeof(UniformBufferObject) * i;
-			vkMapMemory(device, uniformBufferMemory, uniformBufferOffsets[i],
-						sizeof(UniformBufferObject), 0,
-						&uniformBufferMapped[i]);
+		}
+	}
+
+	void createDescriptorPool() {
+		VkDescriptorPoolSize poolSize{
+			.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+		};
+
+		VkDescriptorPoolCreateInfo poolInfo{
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+			.flags = 0,
+			.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+			.poolSizeCount = 1,
+			.pPoolSizes = &poolSize,
+		};
+
+		int result =
+			vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool);
+		switch (result) {
+		case VK_SUCCESS:
+			break;
+		default:
+			throw std::runtime_error(ERROR_CREATE_DESCRIPTOR_POOL);
+		}
+	}
+
+	void createDescriptorSets() {
+		std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT,
+												   descriptorSetLayout);
+		VkDescriptorSetAllocateInfo allocInfo{
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			.descriptorPool = descriptorPool,
+			.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+			.pSetLayouts = layouts.data(),
+		};
+		descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+		int result =
+			vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data());
+		switch (result) {
+		case VK_SUCCESS:
+			break;
+		default:
+			throw std::runtime_error(ERROR_ALLOCATE_DESCRIPTOR_SETS);
+		}
+
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			VkDescriptorBufferInfo buffInfo{
+				.buffer = uniformBuffer,
+				.offset = uniformBufferOffsets[i],
+				.range = sizeof(UniformBufferObject),
+			};
+
+			VkWriteDescriptorSet descriptorWrite{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = descriptorSets[i],
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				.pBufferInfo = &buffInfo,
+			};
+			vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
 		}
 	}
 
@@ -1393,7 +1508,7 @@ class HelloTriangleApplication {
 										 (float)swapChainExtent.height,
 									 0.1f, 10.0f),
 		};
-		memcpy(uniformBufferMapped[frame], &ubo, sizeof(ubo));
+		memcpy(&uniformBufferMap[frame], &ubo, sizeof(ubo));
 	}
 
 	//////////
@@ -1401,9 +1516,18 @@ class HelloTriangleApplication {
 	//////////
 
 	void mainLoop() {
+		static auto lastFrameTime = std::chrono::high_resolution_clock::now();
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
-			drawFrame();
+			auto currentTime = std::chrono::high_resolution_clock::now();
+			float time =
+				std::chrono::duration<float, std::chrono::milliseconds::period>(
+					currentTime - lastFrameTime)
+					.count();
+			if (time > FRAMERATE_CAP) {
+				drawFrame();
+				lastFrameTime = currentTime;
+			}
 		}
 		vkDeviceWaitIdle(device);
 	}
@@ -1516,6 +1640,7 @@ class HelloTriangleApplication {
 		cleanupSwapChain();
 
 		// Uniforms
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 		vkDestroyBuffer(device, uniformBuffer, nullptr);
 		vkFreeMemory(device, uniformBufferMemory, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
