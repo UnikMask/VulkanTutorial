@@ -25,6 +25,8 @@ FetchContent_MakeAvailable(glfw)
 
 add_executable(VulkanTutorial "./main.cpp" "./main.h" "./Vertex.cpp")
 
+target_include_directories(${PROJECT_NAME} PUBLIC libs/)
+
 message(STATUS $ENV{SHADER_COMPILE_SCRIPT})
 
 add_custom_target(compile_shaders ALL
@@ -38,7 +40,7 @@ add_custom_target ( compile_tags ALL
     COMMENT "Compiling project tags")
 
 add_custom_target ( copy_resources ALL 
-    COMMAND cp *.spv build/
+    COMMAND cp -r shaders/ textures/ build/
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Copying resources to build"
 )

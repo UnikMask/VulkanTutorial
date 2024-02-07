@@ -17,6 +17,8 @@
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan_core.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #include "main.h"
 #include <glm/gtc/matrix_transform.hpp>
@@ -157,6 +159,7 @@ class HelloTriangleApplication {
 		createFramebuffers();
 		createCommandPool();
 
+		createTextureImage();
 		createIVBuffer();
 		createUniformBuffer();
 		createDescriptorPool();
@@ -810,8 +813,8 @@ class HelloTriangleApplication {
 
 	void createGraphicsPipeline() {
 		// Create shader modules & create shader stages
-		auto vertShaderCode = readFile("./tutorial_vert.spv");
-		auto fragShaderCode = readFile("./tutorial_frag.spv");
+		auto vertShaderCode = readFile("shaders/tutorial_vert.spv");
+		auto fragShaderCode = readFile("shaders/tutorial_frag.spv");
 
 		VkShaderModule vertShader = createShaderModule(vertShaderCode);
 		VkShaderModule fragShader = createShaderModule(fragShaderCode);
@@ -1535,6 +1538,12 @@ class HelloTriangleApplication {
 		memcpy(&uniformBuffersMap[uniformBufferOffsets[frame]], &ubo,
 			   sizeof(ubo));
 	}
+
+	//////////////
+	// Textures //
+	//////////////
+
+	void createTextureImage() {}
 
 	//////////
 	// Loop //
