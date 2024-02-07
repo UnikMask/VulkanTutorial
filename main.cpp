@@ -1516,18 +1516,19 @@ class HelloTriangleApplication {
 	//////////
 
 	void mainLoop() {
-		static auto lastFrameTime = std::chrono::high_resolution_clock::now();
+		// static auto lastFrameTime =
+		// std::chrono::high_resolution_clock::now();
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
-			auto currentTime = std::chrono::high_resolution_clock::now();
-			float time =
-				std::chrono::duration<float, std::chrono::milliseconds::period>(
-					currentTime - lastFrameTime)
-					.count();
-			if (time > FRAMERATE_CAP) {
-				drawFrame();
-				lastFrameTime = currentTime;
-			}
+			// auto currentTime = std::chrono::high_resolution_clock::now();
+			// float time =
+			// 	std::chrono::duration<float, std::chrono::milliseconds::period>(
+			// 		currentTime - lastFrameTime)
+			// 		.count();
+			// if (time > FRAMERATE_CAP) {
+			drawFrame();
+			// 	lastFrameTime = currentTime;
+			// }
 		}
 		vkDeviceWaitIdle(device);
 	}
