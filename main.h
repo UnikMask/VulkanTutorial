@@ -1,4 +1,3 @@
-#include "glm/fwd.hpp"
 #include <array>
 #include <optional>
 #include <vulkan/vulkan_core.h>
@@ -6,6 +5,7 @@
 #include <GLFW/glfw3.h>
 
 #include <cstdint>
+#define GLM_FORCE_AVX
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -28,7 +28,7 @@ const std::vector<const char *> validationLayers = {
 const uint32_t HEIGHT = 480;
 const uint32_t WIDTH = 640;
 const int MAX_FRAMES_IN_FLIGHT = 2;
-const float FRAMERATE_CAP = 1000 / 60.0f;
+const float FRAMERATE_CAP = 1000 / 20.0f;
 
 // Application Information //
 
@@ -153,3 +153,6 @@ struct SelectFamilyInfo {
 	"Failed to create descriptor set layout!"
 #define ERROR_CREATE_DESCRIPTOR_POOL "Failed to create descriptor pool!"
 #define ERROR_ALLOCATE_DESCRIPTOR_SETS "Failed to allocate descriptor sets!"
+
+#define ERROR_STBI_LOAD_TEXTURE "Failed to load texture: "
+#define ERROR_CREATE_IMAGE "Failed to create image!"
