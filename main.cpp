@@ -818,29 +818,26 @@ class HelloTriangleApplication {
 	}
 
 	void createGraphicsPipeline() {
-		// Create shader modules & create shader stages
-		auto vertShaderCode = readFile("shaders/tutorial_vert.spv");
-		auto fragShaderCode = readFile("shaders/tutorial_frag.spv");
+		VkShaderModule vertShader =
+			createShaderModule(readFile("shaders/tutorial_vert.spv"));
+		VkShaderModule fragShader =
+			createShaderModule(readFile("shaders/tutorial_frag.spv"));
 
-		VkShaderModule vertShader = createShaderModule(vertShaderCode);
-		VkShaderModule fragShader = createShaderModule(fragShaderCode);
+		VkPipelineShaderStageCreateInfo shaderStages[] = {
+			VkPipelineShaderStageCreateInfo{
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+				.stage = VK_SHADER_STAGE_VERTEX_BIT,
+				.module = vertShader,
+				.pName = "main",
 
-		VkPipelineShaderStageCreateInfo vertCreateInfo{
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.stage = VK_SHADER_STAGE_VERTEX_BIT,
-			.module = vertShader,
-			.pName = "main",
-		};
+			},
+			VkPipelineShaderStageCreateInfo{
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+				.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+				.module = fragShader,
+				.pName = "main",
 
-		VkPipelineShaderStageCreateInfo fragCreateInfo{
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-			.module = fragShader,
-			.pName = "main",
-		};
-
-		VkPipelineShaderStageCreateInfo shaderStages[] = {vertCreateInfo,
-														  fragCreateInfo};
+			}};
 
 		// Setup vertex input, and assembly state
 		auto bindingDescription = Vertex::getBindingDescription();
@@ -852,13 +849,6 @@ class HelloTriangleApplication {
 			.vertexAttributeDescriptionCount =
 				static_cast<uint32_t>(attributeDescriptions.size()),
 			.pVertexAttributeDescriptions = attributeDescriptions.data(),
-		};
-
-		VkPipelineInputAssemblyStateCreateInfo assemblyStateCreateInfo{
-			.sType =
-				VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-			.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-			.primitiveRestartEnable = VK_FALSE,
 		};
 
 		// Setup viewport and scissor
@@ -875,68 +865,10 @@ class HelloTriangleApplication {
 			.extent = swapChainExtent,
 		};
 
-		std::vector<VkDynamicState> dynamicStates = {
-			VK_DYNAMIC_STATE_VIEWPORT,
-			VK_DYNAMIC_STATE_SCISSOR,
-		};
-		VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo{
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-			.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
-			.pDynamicStates = dynamicStates.data(),
-		};
-
 		VkPipelineViewportStateCreateInfo viewportState{
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
 			.viewportCount = 1,
 			.scissorCount = 1,
-		};
-
-		// Setup Rasterizer
-		VkPipelineRasterizationStateCreateInfo rasterizer{
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-			.depthClampEnable = VK_FALSE,
-			.rasterizerDiscardEnable = VK_FALSE,
-			.polygonMode = VK_POLYGON_MODE_FILL,
-			.cullMode = VK_CULL_MODE_BACK_BIT,
-			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-			.depthBiasEnable = VK_FALSE,
-			// optional
-			.depthBiasConstantFactor = 0.0f,
-			.depthBiasClamp = 0.0f,
-			.depthBiasSlopeFactor = 0.0f,
-			.lineWidth = 1.0f,
-		};
-
-		// TODO: Multisampling - requires GPU feature, disabled rn
-		VkPipelineMultisampleStateCreateInfo multisampling{
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-			.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-			.sampleShadingEnable = VK_FALSE,
-			// optional features
-		};
-
-		// No depth & stencil testing right now, ignore
-
-		// Color Blending
-		VkPipelineColorBlendAttachmentState colorBlendAttachment{
-			// Implement ALPHA blending
-			.blendEnable = VK_TRUE,
-			.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-			.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-			.colorBlendOp = VK_BLEND_OP_ADD,
-			.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-			.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-			.alphaBlendOp = VK_BLEND_OP_ADD,
-			.colorWriteMask =
-				VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-				VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-		};
-
-		VkPipelineColorBlendStateCreateInfo colorBlending{
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-			.logicOpEnable = VK_FALSE,
-			.attachmentCount = 1,
-			.pAttachments = &colorBlendAttachment,
 		};
 
 		// Create empty pipeline layout - useful later on for uniform buffers.
@@ -961,13 +893,13 @@ class HelloTriangleApplication {
 			.stageCount = 2,
 			.pStages = shaderStages,
 			.pVertexInputState = &vertexInputCreateInfo,
-			.pInputAssemblyState = &assemblyStateCreateInfo,
+			.pInputAssemblyState = &DEFAULT_INPUT_ASSEMBLY,
 			.pViewportState = &viewportState,
-			.pRasterizationState = &rasterizer,
-			.pMultisampleState = &multisampling,
+			.pRasterizationState = &RASTERIZER_DEPTH_OFF,
+			.pMultisampleState = &MULTISAMPLING_STATE_OFF,
 			.pDepthStencilState = nullptr,
-			.pColorBlendState = &colorBlending,
-			.pDynamicState = &dynamicStateCreateInfo,
+			.pColorBlendState = &DEFAULT_COLOR_BLEND_INFO,
+			.pDynamicState = &DEFAULT_DYNAMIC_STATE,
 			.layout = pipelineLayout,
 			.renderPass = renderPass,
 			.subpass = 0,
