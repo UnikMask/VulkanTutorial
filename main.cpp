@@ -1,23 +1,16 @@
-#include <algorithm>
 #include <chrono>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <fstream>
 #include <functional>
 #include <iostream>
-#include <iterator>
-#include <limits>
-#include <map>
 #include <optional>
-#include <ostream>
-#include <pthread.h>
 #include <set>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 #include <vulkan/vulkan_core.h>
+
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -1570,9 +1563,9 @@ class HelloTriangleApplication {
 		UniformBufferObject ubo{
 			.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
 								 glm::vec3(0.0f, 1.0f, 0.0f)),
-			.view = glm::lookAtRH(glm::vec3(2.0f, 2.0f, 2.0f),
-								  glm::vec3(0.0f, 0.0f, 0.0f),
-								  glm::vec3(0.0f, 1.0f, 0.0f)),
+			.view = glm::lookAt(glm::vec3(1.0f, 2.0f, 1.0f),
+								glm::vec3(0.0f, 0.0f, 0.0f),
+								glm::vec3(0.0f, 1.0f, 0.0f)),
 			.proj = glm::perspective(glm::radians(45.0f),
 									 swapChainExtent.width /
 										 (float)swapChainExtent.height,
