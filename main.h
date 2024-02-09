@@ -5,7 +5,8 @@
 #include <GLFW/glfw3.h>
 
 #include <cstdint>
-#define GLM_FORCE_AVX
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -74,12 +75,19 @@ struct UniformBufferObject {
 };
 
 const std::vector<Vertex> vertices = {
-	{{-0.5f, 0, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
-	{{0.5f, 0, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-	{{0.5f, 0, -0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-	{{-0.5f, 0, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}};
+	{{-0.5f, 0, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+	{{0.5f, 0, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	{{0.5f, 0, -0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+	{{-0.5f, 0, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+
+	{{-0.5f, -1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+	{{0.5f, -1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	{{0.5f, -1.0f, -0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+	{{-0.5f, -1.0f, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+
+};
 const std::vector<uint16_t> indices = {
-	0, 1, 2, 2, 3, 0,
+	0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4,
 };
 
 // Queues & Queue Families //
@@ -142,6 +150,28 @@ const VkPipelineRasterizationStateCreateInfo RASTERIZER_DEPTH_OFF{
 	.depthBiasClamp = 0.0f,
 	.depthBiasSlopeFactor = 0.0f,
 	.lineWidth = 1.0f,
+};
+
+const VkPipelineDepthStencilStateCreateInfo DEFAULT_DEPTH_NO_STENCIL{
+	.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+	.depthTestEnable = VK_TRUE,
+	.depthWriteEnable = VK_TRUE,
+	.depthCompareOp = VK_COMPARE_OP_LESS,
+	.depthBoundsTestEnable = VK_FALSE,
+	.stencilTestEnable = VK_FALSE,
+	.minDepthBounds = 0.0f,
+	.maxDepthBounds = 1.0f,
+};
+
+const VkPipelineDepthStencilStateCreateInfo DEFAULT_DEPTH_STENCIL{
+	.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+	.depthTestEnable = VK_TRUE,
+	.depthWriteEnable = VK_TRUE,
+	.depthCompareOp = VK_COMPARE_OP_LESS,
+	.depthBoundsTestEnable = VK_FALSE,
+	.stencilTestEnable = VK_FALSE,
+	.minDepthBounds = 0.0f,
+	.maxDepthBounds = 1.0f,
 };
 
 const VkPipelineInputAssemblyStateCreateInfo DEFAULT_INPUT_ASSEMBLY{
@@ -236,3 +266,9 @@ const VkSamplerCreateInfo DEFAULT_SAMPLER{
 #define ERROR_STBI_LOAD_TEXTURE "Failed to load texture: "
 #define ERROR_CREATE_IMAGE "Failed to create image!"
 #define ERROR_CREATE_SAMPLER "Failed to create image sampler!"
+#define ERROR_BARRIER_UNSUPPORTED_SRC_LAYOUT                                   \
+	"Unsupported source layout in layout transition!"
+#define ERROR_BARRIER_UNSUPPORTED_DST_LAYOUT                                   \
+	"Unsupported destination layout in layout transition!"
+
+#define ERROR_FIND_FORMAT "Failed to find supported format!"

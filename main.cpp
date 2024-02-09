@@ -141,6 +141,11 @@ class HelloTriangleApplication {
 	VkImageView textureImageView;
 	VkSampler textureSampler;
 
+	// Depth //
+	VkImage depthImage;
+	VkDeviceMemory depthImageMemory;
+	VkImageView depthImageView;
+
 	////////////////////
 	// Initialization //
 	////////////////////
@@ -162,10 +167,10 @@ class HelloTriangleApplication {
 		createRenderPass();
 		createDescriptorSetLayout();
 		createGraphicsPipeline();
-
-		// Buffers
-		createFramebuffers();
 		createCommandPool();
+
+		// Depth
+		createDepthResources();
 
 		// Textures
 		createTextureImage();
@@ -178,6 +183,7 @@ class HelloTriangleApplication {
 		createDescriptorPool();
 		createDescriptorSets();
 
+		createFramebuffers();
 		createCommandBuffers();
 	}
 
@@ -195,9 +201,9 @@ class HelloTriangleApplication {
 		glfwSetWindowUserPointer(window, this);
 		glfwSetFramebufferSizeCallback(
 			window, [](GLFWwindow *window, int width, int height) {
-				auto app = reinterpret_cast<HelloTriangleApplication *>(
-					glfwGetWindowUserPointer(window));
-				app->framebufferResized = true;
+				// auto app = reinterpret_cast<HelloTriangleApplication *>(
+				// 	glfwGetWindowUserPointer(window));
+				// app->framebufferResized = true;
 			});
 	}
 
@@ -731,7 +737,8 @@ class HelloTriangleApplication {
 	// Image Views //
 	/////////////////
 
-	VkImageView createImageView(VkImage image, VkFormat format) {
+	VkImageView createImageView(VkImage image, VkFormat format,
+								VkImageSubresourceRange subresource) {
 		VkImageViewCreateInfo createInfo{
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 			.image = image,
@@ -744,14 +751,7 @@ class HelloTriangleApplication {
 					.b = VK_COMPONENT_SWIZZLE_IDENTITY,
 					.a = VK_COMPONENT_SWIZZLE_IDENTITY,
 				},
-			.subresourceRange =
-				{
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1,
-				},
+			.subresourceRange = subresource,
 		};
 
 		VkImageView imageView;
@@ -767,9 +767,16 @@ class HelloTriangleApplication {
 
 	void createSwapChainImageViews() {
 		swapChainImageViews.resize(swapChainImages.size());
+		VkImageSubresourceRange swapChainSubresource{
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1,
+		};
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
-			swapChainImageViews[i] =
-				createImageView(swapChainImages[i], swapChainImageFormat);
+			swapChainImageViews[i] = createImageView(
+				swapChainImages[i], swapChainImageFormat, swapChainSubresource);
 		}
 	}
 
@@ -788,33 +795,49 @@ class HelloTriangleApplication {
 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 			.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 		};
-
 		VkAttachmentReference colorAttachmentRef{
 			.attachment = 0,
 			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 		};
-		std::vector<VkAttachmentReference> attachmentRefs = {
-			colorAttachmentRef};
+		VkAttachmentDescription depthAttachment{
+			.format = findDepthFormat(),
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+			.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+		};
+		VkAttachmentReference depthAttachmentRef{
+			.attachment = 1,
+			.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+		};
 		VkSubpassDescription subpass{
 			.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-			.colorAttachmentCount =
-				static_cast<uint32_t>(attachmentRefs.size()),
-			.pColorAttachments = attachmentRefs.data(),
+			.colorAttachmentCount = 1,
+			.pColorAttachments = &colorAttachmentRef,
+			.pDepthStencilAttachment = &depthAttachmentRef,
 		};
 
 		VkSubpassDependency dependency{
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
 			.dstSubpass = 0,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+							VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+							VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
 			.srcAccessMask = 0,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+							 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
 		};
+
+		std::vector<VkAttachmentDescription> attachments = {colorAttachment,
+															depthAttachment};
 
 		VkRenderPassCreateInfo renderPassInfo{
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-			.attachmentCount = 1,
-			.pAttachments = &colorAttachment,
+			.attachmentCount = (uint32_t)attachments.size(),
+			.pAttachments = attachments.data(),
 			.subpassCount = 1,
 			.pSubpasses = &subpass,
 			.dependencyCount = 1,
@@ -911,7 +934,9 @@ class HelloTriangleApplication {
 			.pViewportState = &viewportState,
 			.pRasterizationState = &RASTERIZER_DEPTH_OFF,
 			.pMultisampleState = &MULTISAMPLING_STATE_OFF,
-			.pDepthStencilState = nullptr,
+			.pDepthStencilState = hasStencilComponent(findDepthFormat())
+									  ? &DEFAULT_DEPTH_STENCIL
+									  : &DEFAULT_DEPTH_NO_STENCIL,
 			.pColorBlendState = &DEFAULT_COLOR_BLEND_INFO,
 			.pDynamicState = &DEFAULT_DYNAMIC_STATE,
 			.layout = pipelineLayout,
@@ -963,12 +988,13 @@ class HelloTriangleApplication {
 		swapChainFramebuffers.resize(swapChainImageViews.size());
 
 		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-			VkImageView attachments[] = {swapChainImageViews[i]};
+			std::vector<VkImageView> attachments = {swapChainImageViews[i],
+													depthImageView};
 			VkFramebufferCreateInfo framebufferInfo{
 				.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
 				.renderPass = renderPass,
-				.attachmentCount = 1,
-				.pAttachments = attachments,
+				.attachmentCount = (uint32_t)attachments.size(),
+				.pAttachments = attachments.data(),
 				.width = swapChainExtent.width,
 				.height = swapChainExtent.height,
 				.layers = 1,
@@ -1100,7 +1126,6 @@ class HelloTriangleApplication {
 			.flags = 0,
 			.pInheritanceInfo = 0,
 		};
-
 		int res = vkBeginCommandBuffer(commandBuffer, &beginInfo);
 		switch (res) {
 		case VK_SUCCESS:
@@ -1109,7 +1134,8 @@ class HelloTriangleApplication {
 			throw std::runtime_error(std::string(ERROR_BEGIN_COMMAND_BUFFER));
 		}
 
-		VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+		std::vector<VkClearValue> clearValues{
+			{.color = {{0.0f, 0.0f, 0.0f, 1.0f}}}, {.depthStencil = {1.0f, 0}}};
 		VkRenderPassBeginInfo renderPassInfo{
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = renderPass,
@@ -1119,8 +1145,8 @@ class HelloTriangleApplication {
 					.offset = {0, 0},
 					.extent = swapChainExtent,
 				},
-			.clearValueCount = 1,
-			.pClearValues = &clearColor,
+			.clearValueCount = (uint32_t)clearValues.size(),
+			.pClearValues = clearValues.data(),
 		};
 
 		// Run commands
@@ -1601,6 +1627,7 @@ class HelloTriangleApplication {
 	}
 
 	void transitionImageLayout(VkImage image, VkFormat format,
+							   VkImageSubresourceRange subresource,
 							   VkImageLayout oldLayout,
 							   VkImageLayout newLayout) {
 
@@ -1613,14 +1640,7 @@ class HelloTriangleApplication {
 			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 			.image = image,
-			.subresourceRange =
-				VkImageSubresourceRange{
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1,
-				},
+			.subresourceRange = subresource,
 		};
 
 		// Set appropriate barrier stages from image source and destination
@@ -1631,21 +1651,28 @@ class HelloTriangleApplication {
 			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 			srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 			break;
-		default:
+		case VK_IMAGE_LAYOUT_UNDEFINED:
 			barrier.srcAccessMask = 0;
 			srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 			break;
+		default:
+			throw std::invalid_argument(ERROR_BARRIER_UNSUPPORTED_SRC_LAYOUT);
 		}
 		switch (newLayout) {
 		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
 			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 			dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			break;
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+			barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+			dstStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			break;
 		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
 			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 			dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 			break;
 		default:
-			break;
+			throw std::invalid_argument(ERROR_BARRIER_UNSUPPORTED_DST_LAYOUT);
 		}
 
 		runSingleTimeCommand(
@@ -1655,17 +1682,19 @@ class HelloTriangleApplication {
 			});
 	}
 
-	void copyBufferToImage(VkBuffer buffer, VkImage image, VkExtent3D extent) {
+	void copyBufferToImage(VkBuffer buffer, VkImage image,
+						   VkImageSubresourceRange subresource,
+						   VkExtent3D extent) {
 		VkBufferImageCopy region{
 			.bufferOffset = 0,
 			.bufferRowLength = 0,
 			.bufferImageHeight = 0,
 			.imageSubresource =
 				{
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.mipLevel = 0,
-					.baseArrayLayer = 0,
-					.layerCount = 1,
+					.aspectMask = subresource.aspectMask,
+					.mipLevel = subresource.baseMipLevel,
+					.baseArrayLayer = subresource.baseArrayLayer,
+					.layerCount = subresource.layerCount,
 				},
 			.imageOffset = {0, 0, 0},
 			.imageExtent = extent,
@@ -1684,14 +1713,13 @@ class HelloTriangleApplication {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 			.flags = 0,
 			.imageType = VK_IMAGE_TYPE_2D,
-			.format = VK_FORMAT_R8G8B8A8_SRGB,
+			.format = format,
 			.extent = extent,
 			.mipLevels = 1,
 			.arrayLayers = 1,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
-			.usage =
-				VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			.usage = flags,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		};
@@ -1715,7 +1743,15 @@ class HelloTriangleApplication {
 	}
 
 	void createTextureImageView() {
-		textureImageView = createImageView(images[0], VK_FORMAT_R8G8B8A8_SRGB);
+		textureImageView =
+			createImageView(images[0], VK_FORMAT_R8G8B8A8_SRGB,
+							{
+								.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+								.baseMipLevel = 0,
+								.levelCount = 1,
+								.baseArrayLayer = 0,
+								.layerCount = 1,
+							});
 	}
 
 	void createTextureSampler() {
@@ -1778,6 +1814,13 @@ class HelloTriangleApplication {
 			.height = (uint32_t)texHeight,
 			.depth = 1,
 		};
+		VkImageSubresourceRange textureSubresource{
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1,
+		};
 		createImage(
 			imageExtent, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -1793,16 +1836,88 @@ class HelloTriangleApplication {
 			},
 			&imageAllocResults);
 		transitionImageLayout(images[0], VK_FORMAT_R8G8B8A8_SRGB,
-							  VK_IMAGE_LAYOUT_UNDEFINED,
+							  textureSubresource, VK_IMAGE_LAYOUT_UNDEFINED,
 							  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		copyBufferToImage(stagingBuffer, images[0], imageExtent);
+		copyBufferToImage(stagingBuffer, images[0], textureSubresource,
+						  imageExtent);
 		transitionImageLayout(images[0], VK_FORMAT_R8G8B8A8_SRGB,
+							  textureSubresource,
 							  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 							  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 		// Cleanup
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingBufferMemory, nullptr);
+	}
+
+	/////////////////////
+	// Depth & Stencil //
+	/////////////////////
+
+	VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates,
+								 VkImageTiling tiling,
+								 VkFormatFeatureFlags features) {
+
+		for (auto &format : candidates) {
+			VkFormatProperties props;
+			vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+
+			VkFormatFeatureFlags formatFeatures;
+			formatFeatures = tiling == VK_IMAGE_TILING_OPTIMAL
+								 ? props.optimalTilingFeatures
+								 : props.linearTilingFeatures;
+			if (features & formatFeatures) {
+				return format;
+			}
+		}
+		throw std::runtime_error(ERROR_FIND_FORMAT);
+	}
+
+	inline VkFormat findDepthFormat() {
+		return findSupportedFormat(
+			{VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
+			 VK_FORMAT_D32_SFLOAT},
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	}
+
+	inline bool hasStencilComponent(VkFormat format) {
+		return format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+			   format == VK_FORMAT_D24_UNORM_S8_UINT;
+	}
+
+	void createDepthResources() {
+		VkFormat format = findDepthFormat();
+
+		VkExtent3D depthExtent{
+			.width = swapChainExtent.width,
+			.height = swapChainExtent.height,
+			.depth = 1,
+		};
+		createImage(depthExtent, format, VK_IMAGE_TILING_OPTIMAL,
+					VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImage);
+		allocateImages(
+			AllocateImagesInfo{
+				.imageCount = 1,
+				.pImages = &depthImage,
+				.bufferMemory = &depthImageMemory,
+			},
+			nullptr);
+
+		VkImageSubresourceRange depthSubresource{
+			.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1,
+		};
+		if (hasStencilComponent(format)) {
+			depthSubresource.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		}
+		depthImageView = createImageView(depthImage, format, depthSubresource);
+		transitionImageLayout(depthImage, format, depthSubresource,
+							  VK_IMAGE_LAYOUT_UNDEFINED,
+							  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 	}
 
 	//////////
@@ -1906,6 +2021,10 @@ class HelloTriangleApplication {
 	/////////////
 
 	void cleanupSwapChain() {
+		vkDestroyImageView(device, depthImageView, nullptr);
+		vkDestroyImage(device, depthImage, nullptr);
+		vkFreeMemory(device, depthImageMemory, nullptr);
+
 		for (VkFramebuffer fb : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, fb, nullptr);
 		}
@@ -1929,6 +2048,7 @@ class HelloTriangleApplication {
 
 		createSwapChain();
 		createSwapChainImageViews();
+		createDepthResources();
 		createFramebuffers();
 	}
 
