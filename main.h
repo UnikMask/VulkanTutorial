@@ -60,9 +60,10 @@ const std::vector<VkPresentModeKHR> presentModeOrder = {
 struct Vertex {
 	glm::vec4 pos;
 	glm::vec4 color;
+	glm::vec2 texCoord;
 
 	static VkVertexInputBindingDescription getBindingDescription();
-	static std::array<VkVertexInputAttributeDescription, 2>
+	static std::array<VkVertexInputAttributeDescription, 3>
 	getAttributeDescriptions();
 };
 
@@ -73,10 +74,10 @@ struct UniformBufferObject {
 };
 
 const std::vector<Vertex> vertices = {
-	{{-0.5f, 0, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-	{{0.5f, 0, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-	{{0.5f, 0, -0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-	{{-0.5f, 0, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}}};
+	{{-0.5f, 0, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+	{{0.5f, 0, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+	{{0.5f, 0, -0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+	{{-0.5f, 0, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}};
 const std::vector<uint16_t> indices = {
 	0, 1, 2, 2, 3, 0,
 };
@@ -159,6 +160,26 @@ const VkPipelineDynamicStateCreateInfo DEFAULT_DYNAMIC_STATE{
 	.pDynamicStates = DEFAULT_DYNAMIC_STATES.data(),
 };
 
+// Texture Sampling //
+const VkSamplerCreateInfo DEFAULT_SAMPLER{
+	.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+	.magFilter = VK_FILTER_LINEAR,
+	.minFilter = VK_FILTER_LINEAR,
+	.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+	.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+	.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+	.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+	.mipLodBias = 0.0f,
+	.anisotropyEnable = VK_FALSE,
+	.maxAnisotropy = 0.0f,
+	.compareEnable = VK_FALSE,
+	.compareOp = VK_COMPARE_OP_ALWAYS,
+	.minLod = 0.0f,
+	.maxLod = 0.0f,
+	.borderColor = VK_BORDER_COLOR_INT_OPAQUE_WHITE,
+	.unnormalizedCoordinates = VK_FALSE,
+};
+
 // Errors //
 
 #define VK_CREATE_INSTANCE_ERROR " - Failed to create instance!"
@@ -214,3 +235,4 @@ const VkPipelineDynamicStateCreateInfo DEFAULT_DYNAMIC_STATE{
 
 #define ERROR_STBI_LOAD_TEXTURE "Failed to load texture: "
 #define ERROR_CREATE_IMAGE "Failed to create image!"
+#define ERROR_CREATE_SAMPLER "Failed to create image sampler!"

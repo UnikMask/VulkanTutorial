@@ -138,6 +138,8 @@ class HelloTriangleApplication {
 	std::vector<VkImage> images;
 	std::vector<VkDeviceSize> imageMemoryOffsets;
 	VkDeviceMemory imageMemory;
+	VkImageView textureImageView;
+	VkSampler textureSampler;
 
 	////////////////////
 	// Initialization //
@@ -156,7 +158,7 @@ class HelloTriangleApplication {
 
 		// Graphics Pipeline
 		createSwapChain();
-		createImageView();
+		createSwapChainImageViews();
 		createRenderPass();
 		createDescriptorSetLayout();
 		createGraphicsPipeline();
@@ -165,7 +167,12 @@ class HelloTriangleApplication {
 		createFramebuffers();
 		createCommandPool();
 
+		// Textures
 		createTextureImage();
+		createTextureImageView();
+		createTextureSampler();
+
+		// Vertices/Indices/Uniforms
 		createIVBuffer();
 		createUniformBuffer();
 		createDescriptorPool();
@@ -474,6 +481,7 @@ class HelloTriangleApplication {
 			score = 0;
 		}
 		score += properties.limits.maxImageDimension2D;
+		score *= 1 + features.samplerAnisotropy;
 
 		return score;
 	}
@@ -723,39 +731,45 @@ class HelloTriangleApplication {
 	// Image Views //
 	/////////////////
 
-	void createImageView() {
+	VkImageView createImageView(VkImage image, VkFormat format) {
+		VkImageViewCreateInfo createInfo{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.image = image,
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = format,
+			.components =
+				{
+					.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.g = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.b = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.a = VK_COMPONENT_SWIZZLE_IDENTITY,
+				},
+			.subresourceRange =
+				{
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseMipLevel = 0,
+					.levelCount = 1,
+					.baseArrayLayer = 0,
+					.layerCount = 1,
+				},
+		};
+
+		VkImageView imageView;
+		int res = vkCreateImageView(device, &createInfo, nullptr, &imageView);
+		switch (res) {
+		case VK_SUCCESS:
+			break;
+		default:
+			throw std::runtime_error(ERROR_CREATE_IMAGEVIEW);
+		}
+		return imageView;
+	}
+
+	void createSwapChainImageViews() {
 		swapChainImageViews.resize(swapChainImages.size());
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
-			VkImageViewCreateInfo createInfo{
-				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.image = swapChainImages[i],
-				.viewType = VK_IMAGE_VIEW_TYPE_2D,
-				.format = swapChainImageFormat,
-				.components =
-					{
-						.r = VK_COMPONENT_SWIZZLE_IDENTITY,
-						.g = VK_COMPONENT_SWIZZLE_IDENTITY,
-						.b = VK_COMPONENT_SWIZZLE_IDENTITY,
-						.a = VK_COMPONENT_SWIZZLE_IDENTITY,
-					},
-				.subresourceRange =
-					{
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseMipLevel = 0,
-						.levelCount = 1,
-						.baseArrayLayer = 0,
-						.layerCount = 1,
-					},
-			};
-
-			int res = vkCreateImageView(device, &createInfo, nullptr,
-										&swapChainImageViews[i]);
-			switch (res) {
-			case VK_SUCCESS:
-				break;
-			default:
-				throw std::runtime_error(ERROR_CREATE_IMAGEVIEW);
-			}
+			swapChainImageViews[i] =
+				createImageView(swapChainImages[i], swapChainImageFormat);
 		}
 	}
 
@@ -1372,18 +1386,28 @@ class HelloTriangleApplication {
 	//////////////
 
 	void createDescriptorSetLayout() {
-		VkDescriptorSetLayoutBinding uboLayoutBinding{
-			.binding = 0,
-			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-			.pImmutableSamplers = nullptr,
-		};
+		std::vector<VkDescriptorSetLayoutBinding> bindings = {
+			{
+				.binding = 0,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				.descriptorCount = 1,
+				.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+				.pImmutableSamplers = nullptr,
+
+			},
+			{
+				.binding = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.descriptorCount = 1,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				.pImmutableSamplers = nullptr,
+
+			}};
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-			.bindingCount = 1,
-			.pBindings = &uboLayoutBinding,
+			.bindingCount = (uint32_t)bindings.size(),
+			.pBindings = bindings.data(),
 		};
 
 		int result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
@@ -1424,17 +1448,22 @@ class HelloTriangleApplication {
 	}
 
 	void createDescriptorPool() {
-		VkDescriptorPoolSize poolSize{
-			.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
-		};
+		std::vector<VkDescriptorPoolSize> poolSizes{
+			{
+				.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+			},
+			{
+				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+			}};
 
 		VkDescriptorPoolCreateInfo poolInfo{
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 			.flags = 0,
 			.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
-			.poolSizeCount = 1,
-			.pPoolSizes = &poolSize,
+			.poolSizeCount = (uint32_t)poolSizes.size(),
+			.pPoolSizes = poolSizes.data(),
 		};
 
 		int result =
@@ -1472,17 +1501,33 @@ class HelloTriangleApplication {
 				.offset = 0,
 				.range = sizeof(UniformBufferObject),
 			};
-
-			VkWriteDescriptorSet descriptorWrite{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = descriptorSets[i],
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-				.pBufferInfo = &buffInfo,
+			VkDescriptorImageInfo imageInfo{
+				.sampler = textureSampler,
+				.imageView = textureImageView,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			};
-			vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+
+			std::vector<VkWriteDescriptorSet> descriptorWrites = {
+				{
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = descriptorSets[i],
+					.dstBinding = 0,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+					.pBufferInfo = &buffInfo,
+				},
+				{
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = descriptorSets[i],
+					.dstBinding = 1,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.pImageInfo = &imageInfo,
+				}};
+			vkUpdateDescriptorSets(device, (uint32_t)descriptorWrites.size(),
+								   descriptorWrites.data(), 0, nullptr);
 		}
 	}
 
@@ -1666,6 +1711,32 @@ class HelloTriangleApplication {
 			break;
 		default:
 			throw std::runtime_error(ERROR_CREATE_IMAGE);
+		}
+	}
+
+	void createTextureImageView() {
+		textureImageView = createImageView(images[0], VK_FORMAT_R8G8B8A8_SRGB);
+	}
+
+	void createTextureSampler() {
+		VkPhysicalDeviceProperties properties{};
+		vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+
+		VkPhysicalDeviceFeatures features{};
+		vkGetPhysicalDeviceFeatures(physicalDevice, &features);
+
+		VkSamplerCreateInfo samplerInfo = DEFAULT_SAMPLER;
+		if (features.samplerAnisotropy) {
+			samplerInfo.anisotropyEnable = VK_TRUE;
+			samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+		}
+		int result =
+			vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler);
+		switch (result) {
+		case VK_SUCCESS:
+			break;
+		default:
+			throw std::runtime_error(ERROR_CREATE_SAMPLER);
 		}
 	}
 
@@ -1857,13 +1928,15 @@ class HelloTriangleApplication {
 		cleanupSwapChain();
 
 		createSwapChain();
-		createImageView();
+		createSwapChainImageViews();
 		createFramebuffers();
 	}
 
 	void cleanup() {
 		cleanupSwapChain();
 
+		vkDestroySampler(device, textureSampler, nullptr);
+		vkDestroyImageView(device, textureImageView, nullptr);
 		for (auto &image : images) {
 			vkDestroyImage(device, image, nullptr);
 		}
