@@ -11,7 +11,11 @@ const int ditherMatrix[16] = int[](0,  8,  2,  10,
                                   12, 4,  14, 6,
                                   3,  11, 1,  9,
                                   15, 7,  13, 5);
-const float ditherq = 1.0f;
+// const int ditherMatrix[16] = int[](8,  8,  8,  8,
+//                                   8, 8,  8, 8,
+//                                   8,  8, 8,  8,
+//                                   8, 8,  8, 8);
+const float ditherq = 1.0f/3.0f;
 
 
 vec4 dither(vec4 color) {
@@ -22,5 +26,6 @@ vec4 dither(vec4 color) {
 }
 
 void main() {
-    outColor = dither(texture(texSampler, fragTexCoord));
+    outColor = texture(texSampler, fragTexCoord);
+    outColor = dither(outColor);
 }
