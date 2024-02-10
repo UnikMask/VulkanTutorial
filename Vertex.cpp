@@ -1,10 +1,25 @@
+#include "glm/fwd.hpp"
 #include "main.h"
 #include <array>
 #include <cstddef>
-#include <vulkan/vulkan_core.h>
+#include <functional>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+
+bool Vertex::operator==(const Vertex &other) const {
+	return pos == other.pos && color == other.color &&
+		   texCoord == other.texCoord;
+}
+
+namespace std {
+size_t hash<Vertex>::operator()(Vertex const &vertex) const {
+	return ((hash<glm::vec4>()(vertex.pos) ^
+			 (hash<glm::vec4>()(vertex.color) << 1)) >>
+			1) ^
+		   (hash<glm::vec2>()(vertex.texCoord) << 1);
+}
+} // namespace std
 
 VkVertexInputBindingDescription Vertex::getBindingDescription() {
 	VkVertexInputBindingDescription bindingDescription{

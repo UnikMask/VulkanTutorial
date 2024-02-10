@@ -1,14 +1,16 @@
 #include <array>
 #include <optional>
-#include <vulkan/vulkan_core.h>
+#include <string>
+#include <vector>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <cstdint>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
-#include <vector>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 
 // Debug Configuration //
 #ifdef NDEBUG
@@ -26,10 +28,16 @@ const std::vector<const char *> validationLayers = {
 #define APP_NAME WINDOW_NAME
 #define WAYLAND_APP_ID "vulkan_tutorial"
 
+#define INDEX_TYPE VK_INDEX_TYPE_UINT32
+typedef uint32_t index_t;
+
 const uint32_t HEIGHT = 480;
 const uint32_t WIDTH = 640;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 const float FRAMERATE_CAP = 1000 / 20.0f;
+
+const std::string MODEL_PATH = "models/viking_room.obj";
+const std::string MODEL_TEX_PATH = "textures/viking_room.png";
 
 // Application Information //
 
@@ -63,31 +71,23 @@ struct Vertex {
 	glm::vec4 color;
 	glm::vec2 texCoord;
 
+	bool operator==(const Vertex &other) const;
+
 	static VkVertexInputBindingDescription getBindingDescription();
 	static std::array<VkVertexInputAttributeDescription, 3>
 	getAttributeDescriptions();
 };
 
+namespace std {
+template <> struct hash<Vertex> {
+	size_t operator()(Vertex const &vertex) const;
+};
+} // namespace std
+
 struct UniformBufferObject {
 	alignas(16) glm::mat4 model;
 	alignas(16) glm::mat4 view;
 	alignas(16) glm::mat4 proj;
-};
-
-const std::vector<Vertex> vertices = {
-	{{-0.5f, 0, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-	{{0.5f, 0, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-	{{0.5f, 0, -0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
-	{{-0.5f, 0, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
-
-	{{-0.5f, -1.0f, 0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-	{{0.5f, -1.0f, 0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-	{{0.5f, -1.0f, -0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
-	{{-0.5f, -1.0f, -0.5f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
-
-};
-const std::vector<uint16_t> indices = {
-	0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4,
 };
 
 // Queues & Queue Families //
@@ -143,7 +143,7 @@ const VkPipelineRasterizationStateCreateInfo RASTERIZER_DEPTH_OFF{
 	.rasterizerDiscardEnable = VK_FALSE,
 	.polygonMode = VK_POLYGON_MODE_FILL,
 	.cullMode = VK_CULL_MODE_BACK_BIT,
-	.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+	.frontFace = VK_FRONT_FACE_CLOCKWISE,
 	.depthBiasEnable = VK_FALSE,
 	// optional
 	.depthBiasConstantFactor = 0.0f,

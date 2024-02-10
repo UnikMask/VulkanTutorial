@@ -1,15 +1,17 @@
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "tiny_obj_loader.h"
+#include <tiny_obj_loader.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -113,6 +115,10 @@ class HelloTriangleApplication {
 	bool framebufferResized = false; // Force image resizing
 	uint32_t currentFrame = 0;		 // Frames-in-flight feature
 
+	// Model //
+	std::vector<Vertex> vertices;
+	std::vector<index_t> indices;
+
 	// Index/Vertex Buffers //
 	VkBuffer ivBuffer;
 	VkDeviceMemory ivBufferMemory;
@@ -171,6 +177,7 @@ class HelloTriangleApplication {
 		createTextureSampler();
 
 		// Vertices/Indices/Uniforms
+		loadModel();
 		createIVBuffer();
 		createUniformBuffer();
 		createDescriptorPool();
@@ -194,9 +201,9 @@ class HelloTriangleApplication {
 		glfwSetWindowUserPointer(window, this);
 		glfwSetFramebufferSizeCallback(
 			window, [](GLFWwindow *window, int width, int height) {
-				// auto app = reinterpret_cast<HelloTriangleApplication *>(
-				// 	glfwGetWindowUserPointer(window));
-				// app->framebufferResized = true;
+				auto app = reinterpret_cast<HelloTriangleApplication *>(
+					glfwGetWindowUserPointer(window));
+				app->framebufferResized = true;
 			});
 	}
 
@@ -1151,15 +1158,14 @@ class HelloTriangleApplication {
 		VkDeviceSize vertexOffsets[] = {verticesOffset};
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivBuffer, vertexOffsets);
 		vkCmdBindIndexBuffer(commandBuffer, ivBuffer, indicesOffset,
-							 VK_INDEX_TYPE_UINT16);
+							 INDEX_TYPE);
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 								pipelineLayout, 0, 1,
 								&descriptorSets[currentFrame], 0, nullptr);
-		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()),
-						 1, 0, 0, 0);
+		vkCmdDrawIndexed(commandBuffer, (float)indices.size(), 1, 0, 0, 0);
 		vkCmdEndRenderPass(commandBuffer);
 		res = vkEndCommandBuffer(commandBuffer);
 		switch (res) {
@@ -1215,7 +1221,7 @@ class HelloTriangleApplication {
 	void createIVBuffer() {
 		VkDeviceSize verticesSize = sizeof(Vertex) * vertices.size();
 		verticesOffset = 0;
-		VkDeviceSize indicesSize = sizeof(uint16_t) * indices.size();
+		VkDeviceSize indicesSize = sizeof(index_t) * indices.size();
 		indicesOffset = verticesOffset + verticesSize;
 		VkDeviceSize bufferSize = verticesSize + indicesSize;
 
@@ -1235,15 +1241,11 @@ class HelloTriangleApplication {
 			nullptr);
 
 		// Copy vertex and index contents
-		void *data;
-		vkMapMemory(device, stagingBufferMemory, verticesOffset, verticesSize,
-					0, &data);
+		char *data;
+		vkMapMemory(device, stagingBufferMemory, 0, VK_WHOLE_SIZE, 0,
+					(void **)&data);
 		memcpy(data, vertices.data(), verticesSize);
-		vkUnmapMemory(device, stagingBufferMemory);
-
-		vkMapMemory(device, stagingBufferMemory, indicesOffset, indicesSize, 0,
-					&data);
-		memcpy(data, indices.data(), verticesSize);
+		memcpy(data + indicesOffset, indices.data(), indicesSize);
 		vkUnmapMemory(device, stagingBufferMemory);
 
 		// Create buffer and copy staging buffer data
@@ -1561,9 +1563,9 @@ class HelloTriangleApplication {
 
 		// Fill ubo
 		UniformBufferObject ubo{
-			.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
+			.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f),
 								 glm::vec3(0.0f, 1.0f, 0.0f)),
-			.view = glm::lookAt(glm::vec3(1.0f, 2.0f, 1.0f),
+			.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
 								glm::vec3(0.0f, 0.0f, 0.0f),
 								glm::vec3(0.0f, 1.0f, 0.0f)),
 			.proj = glm::perspective(glm::radians(45.0f),
@@ -1772,7 +1774,7 @@ class HelloTriangleApplication {
 	void createTextureImage() {
 		// Load image data
 		int texWidth, texHeight, texChannels;
-		stbi_uc *pixels = stbi_load("./textures/texture.jpg", &texWidth,
+		stbi_uc *pixels = stbi_load(MODEL_TEX_PATH.c_str(), &texWidth,
 									&texHeight, &texChannels, STBI_rgb_alpha);
 		if (pixels == NULL) {
 			throw std::runtime_error(std::string(ERROR_STBI_LOAD_TEXTURE) +
@@ -1911,6 +1913,48 @@ class HelloTriangleApplication {
 		transitionImageLayout(depthImage, format, depthSubresource,
 							  VK_IMAGE_LAYOUT_UNDEFINED,
 							  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+	}
+
+	////////////
+	// Models //
+	////////////
+
+	void loadModel() {
+		tinyobj::attrib_t attrib;
+		std::vector<tinyobj::shape_t> shapes;
+		std::vector<tinyobj::material_t> materials;
+		std::string err;
+
+		if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err,
+							  MODEL_PATH.c_str())) {
+			throw std::runtime_error(err);
+		}
+
+		std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+		for (const auto &shape : shapes) {
+			for (const auto &index : shape.mesh.indices) {
+				Vertex vert = getVertexFromIndex(attrib, index);
+				if (uniqueVertices.count(vert) == 0) {
+					uniqueVertices[vert] = (uint32_t)vertices.size();
+					vertices.push_back(vert);
+				}
+				indices.push_back(uniqueVertices[vert]);
+			}
+		}
+		std::cout << "Number of vertices: " << vertices.size() << std::endl;
+	}
+
+	Vertex getVertexFromIndex(tinyobj::attrib_t attrib,
+							  tinyobj::index_t index) {
+		return {
+			.pos = {attrib.vertices[3 * index.vertex_index],
+					attrib.vertices[3 * index.vertex_index + 2],
+					attrib.vertices[3 * index.vertex_index + 1], 1.0f},
+			.color = {1.0f, 1.0f, 1.0f, 1.0f},
+			.texCoord = {attrib.texcoords[2 * index.texcoord_index],
+						 1.0f - attrib.texcoords[2 * index.texcoord_index + 1]},
+
+		};
 	}
 
 	//////////
