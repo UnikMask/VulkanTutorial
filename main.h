@@ -36,6 +36,8 @@ const uint32_t WIDTH = 640;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 const float FRAMERATE_CAP = 1000 / 20.0f;
 
+#define getMipLevels(w, h) (uint32_t) std::floor(std::log2(std::max(w, h))) + 1
+
 const std::string MODEL_PATH = "models/viking_room.obj";
 const std::string MODEL_TEX_PATH = "textures/viking_room.png";
 
@@ -270,5 +272,7 @@ const VkSamplerCreateInfo DEFAULT_SAMPLER{
 	"Unsupported source layout in layout transition!"
 #define ERROR_BARRIER_UNSUPPORTED_DST_LAYOUT                                   \
 	"Unsupported destination layout in layout transition!"
+#define ERROR_FILTER_FORMAT_FEATURES                                           \
+	"Texture image format does not support linear blitting!"
 
 #define ERROR_FIND_FORMAT "Failed to find supported format!"

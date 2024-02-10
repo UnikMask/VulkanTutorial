@@ -134,6 +134,7 @@ class HelloTriangleApplication {
 	std::vector<VkDescriptorSet> descriptorSets;
 
 	// Textures //
+	uint32_t mipLevels;
 	std::vector<VkImage> images;
 	std::vector<VkDeviceSize> imageMemoryOffsets;
 	VkDeviceMemory imageMemory;
@@ -1628,8 +1629,6 @@ class HelloTriangleApplication {
 
 		VkImageMemoryBarrier barrier{
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.srcAccessMask = 0, // TODO:
-			.dstAccessMask = 0, // TODO:
 			.oldLayout = oldLayout,
 			.newLayout = newLayout,
 			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -1702,15 +1701,16 @@ class HelloTriangleApplication {
 			});
 	}
 
-	void createImage(VkExtent3D extent, VkFormat format, VkImageTiling tiling,
-					 VkImageUsageFlags flags, VkImage &image) {
+	void createImage(VkExtent3D extent, uint32_t mipLevels, VkFormat format,
+					 VkImageTiling tiling, VkImageUsageFlags flags,
+					 VkImage &image) {
 		VkImageCreateInfo imageInfo{
 			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 			.flags = 0,
 			.imageType = VK_IMAGE_TYPE_2D,
 			.format = format,
 			.extent = extent,
-			.mipLevels = 1,
+			.mipLevels = mipLevels,
 			.arrayLayers = 1,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
@@ -1743,7 +1743,7 @@ class HelloTriangleApplication {
 							{
 								.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 								.baseMipLevel = 0,
-								.levelCount = 1,
+								.levelCount = mipLevels,
 								.baseArrayLayer = 0,
 								.layerCount = 1,
 							});
@@ -1757,6 +1757,7 @@ class HelloTriangleApplication {
 		vkGetPhysicalDeviceFeatures(physicalDevice, &features);
 
 		VkSamplerCreateInfo samplerInfo = DEFAULT_SAMPLER;
+		samplerInfo.maxLod = (float)mipLevels;
 		if (features.samplerAnisotropy) {
 			samplerInfo.anisotropyEnable = VK_TRUE;
 			samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
@@ -1780,6 +1781,7 @@ class HelloTriangleApplication {
 			throw std::runtime_error(std::string(ERROR_STBI_LOAD_TEXTURE) +
 									 std::string(stbi_failure_reason()));
 		}
+		mipLevels = getMipLevels(texWidth, texHeight);
 		VkDeviceSize imageSize = texWidth * texHeight * STBI_rgb_alpha;
 
 		// Load staging buffer and load stb data to it
@@ -1812,16 +1814,17 @@ class HelloTriangleApplication {
 		VkImageSubresourceRange textureSubresource{
 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 			.baseMipLevel = 0,
-			.levelCount = 1,
+			.levelCount = mipLevels,
 			.baseArrayLayer = 0,
 			.layerCount = 1,
 		};
-		createImage(
-			imageExtent, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-			images[0]);
+		createImage(imageExtent, mipLevels, VK_FORMAT_R8G8B8A8_SRGB,
+					VK_IMAGE_TILING_OPTIMAL,
+					VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+						VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+						VK_IMAGE_USAGE_SAMPLED_BIT,
+					images[0]);
 
-		AllocationInfo imageAllocResults;
 		allocateImages(
 			AllocateImagesInfo{
 				.imageCount = 1,
@@ -1829,20 +1832,103 @@ class HelloTriangleApplication {
 				.bufferMemory = &imageMemory,
 				.memoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			},
-			&imageAllocResults);
+			nullptr);
 		transitionImageLayout(images[0], VK_FORMAT_R8G8B8A8_SRGB,
 							  textureSubresource, VK_IMAGE_LAYOUT_UNDEFINED,
 							  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		copyBufferToImage(stagingBuffer, images[0], textureSubresource,
 						  imageExtent);
-		transitionImageLayout(images[0], VK_FORMAT_R8G8B8A8_SRGB,
-							  textureSubresource,
-							  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-							  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		generateMipmaps(images[0], VK_FORMAT_R8G8B8A8_SRGB, imageExtent,
+						mipLevels);
 
 		// Cleanup
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingBufferMemory, nullptr);
+	}
+
+	void generateMipmaps(VkImage image, VkFormat format, VkExtent3D extent,
+						 uint32_t mipLevels) {
+		VkFormatProperties props;
+		vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+		if (!(props.optimalTilingFeatures &
+			  VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) {
+			throw std::runtime_error(ERROR_FILTER_FORMAT_FEATURES);
+		}
+
+		int32_t mipWidth = extent.width, mipHeight = extent.height;
+		VkImageMemoryBarrier barrier{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image = image,
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+			}};
+		VkImageBlit blit{
+			.srcSubresource =
+				{
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.mipLevel = 0,
+					.baseArrayLayer = 0,
+					.layerCount = 1,
+				},
+			.srcOffsets = {{0, 0, 0}, {0, 0, 0}},
+			.dstSubresource =
+				{
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.mipLevel = 1,
+					.baseArrayLayer = 0,
+					.layerCount = 1,
+				},
+			.dstOffsets = {{0, 0, 0}, {0, 0, 0}},
+		};
+		runSingleTimeCommand(
+			graphicsPool, graphicsQueue, [&](VkCommandBuffer &commandBuffer) {
+				for (uint32_t i = 1; i < mipLevels; i++) {
+					barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+					barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+					barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+					barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+					barrier.subresourceRange.baseMipLevel = i - 1;
+					vkCmdPipelineBarrier(commandBuffer,
+										 VK_PIPELINE_STAGE_TRANSFER_BIT,
+										 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+										 nullptr, 0, nullptr, 1, &barrier);
+
+					blit.srcSubresource.mipLevel = i - 1;
+					blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+					blit.dstSubresource.mipLevel = i;
+					mipWidth = std::max(mipWidth >> 1, 1);
+					mipHeight = std::max(mipHeight >> 1, 1);
+					blit.dstOffsets[1] = {mipWidth, mipHeight, 1};
+					vkCmdBlitImage(commandBuffer, image,
+								   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image,
+								   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+								   &blit, VK_FILTER_LINEAR);
+
+					barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+					barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+					barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+					barrier.newLayout =
+						VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					vkCmdPipelineBarrier(
+						commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+						VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+						nullptr, 1, &barrier);
+				}
+				barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+				barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+				barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+				barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+				barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				vkCmdPipelineBarrier(commandBuffer,
+									 VK_PIPELINE_STAGE_TRANSFER_BIT,
+									 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+									 0, nullptr, 0, nullptr, 1, &barrier);
+			});
 	}
 
 	/////////////////////
@@ -1889,7 +1975,7 @@ class HelloTriangleApplication {
 			.height = swapChainExtent.height,
 			.depth = 1,
 		};
-		createImage(depthExtent, format, VK_IMAGE_TILING_OPTIMAL,
+		createImage(depthExtent, 1, format, VK_IMAGE_TILING_OPTIMAL,
 					VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImage);
 		allocateImages(
 			AllocateImagesInfo{
@@ -1941,7 +2027,6 @@ class HelloTriangleApplication {
 				indices.push_back(uniqueVertices[vert]);
 			}
 		}
-		std::cout << "Number of vertices: " << vertices.size() << std::endl;
 	}
 
 	Vertex getVertexFromIndex(tinyobj::attrib_t attrib,
