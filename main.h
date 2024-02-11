@@ -2,6 +2,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -131,13 +132,12 @@ const VkPipelineColorBlendStateCreateInfo DEFAULT_COLOR_BLEND_INFO{
 	.attachmentCount = 1,
 	.pAttachments = &DEFAULT_COLOR_BLEND_ATTACHMENT,
 };
-const VkPipelineMultisampleStateCreateInfo MULTISAMPLING_STATE_OFF{
+const VkPipelineMultisampleStateCreateInfo DEFAULT_MULTISAMPLING{
 	.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 	.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
 	.sampleShadingEnable = VK_FALSE,
+	// .minSampleShading = .2f,
 };
-// TODO: Antialiasing
-const VkPipelineMultisampleStateCreateInfo MULTISAMPLING_STATE_ON{};
 
 const VkPipelineRasterizationStateCreateInfo RASTERIZER_DEPTH_OFF{
 	.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
