@@ -901,9 +901,9 @@ class HelloTriangleApplication {
 
 	void createGraphicsPipeline() {
 		VkShaderModule vertShader =
-			createShaderModule(readFile("shaders/tutorial_vert.spv"));
+			createShaderModule(readFile("shaders/tutorial.vert.spv"));
 		VkShaderModule fragShader =
-			createShaderModule(readFile("shaders/tutorial_frag.spv"));
+			createShaderModule(readFile("shaders/tutorial.frag.spv"));
 
 		VkPipelineShaderStageCreateInfo shaderStages[] = {
 			VkPipelineShaderStageCreateInfo{
