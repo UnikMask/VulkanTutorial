@@ -39,8 +39,8 @@ const float FRAMERATE_CAP = 1000 / 20.0f;
 
 #define getMipLevels(w, h) (uint32_t) std::floor(std::log2(std::max(w, h))) + 1
 
-const std::string MODEL_PATH = "models/viking_room.obj";
-const std::string MODEL_TEX_PATH = "textures/viking_room.png";
+const std::string MODEL_PATH = "models/artefact.obj";
+const std::string MODEL_TEX_PATH = "textures/stones_color.png";
 
 // Application Information //
 
