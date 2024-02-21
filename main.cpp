@@ -450,8 +450,9 @@ class HelloTriangleApplication {
 			}
 		}
 		if (!candidates.empty()) {
-			physicalDevice = candidates.rend()->second;
-			msaaSamples = getMaxUsableSampleCount(physicalDevice);
+			physicalDevice = candidates.rbegin()->second;
+			// msaaSamples = getMaxUsableSampleCount(physicalDevice);
+			msaaSamples = VK_SAMPLE_COUNT_2_BIT;
 		}
 		if (this->physicalDevice == VK_NULL_HANDLE) {
 			throw std::runtime_error(std::string(ERROR_NO_SUITABLE_DEVICES) +
@@ -833,7 +834,8 @@ class HelloTriangleApplication {
 			.samples = msaaSamples,
 			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 			.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 			.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 		};
@@ -1183,7 +1185,7 @@ class HelloTriangleApplication {
 		}
 
 		std::vector<VkClearValue> clearValues{
-			{.color = {{0.0f, 0.0f, 0.0f, 1.0f}}}, {.depthStencil = {1.0f, 0}}};
+			{.color = {{0.0f, 0.0f, 0.0f, 1.0f}}}, {.depthStencil = {1.0f, 1}}};
 		VkRenderPassBeginInfo renderPassInfo{
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = renderPass,
@@ -1620,7 +1622,7 @@ class HelloTriangleApplication {
 			.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
 								glm::vec3(0.0f, 0.0f, 0.0f),
 								glm::vec3(0.0f, 1.0f, 0.0f)),
-			.proj = glm::perspective(glm::radians(45.0f),
+			.proj = glm::perspective(glm::radians(30.0f),
 									 swapChainExtent.width /
 										 (float)swapChainExtent.height,
 									 0.1f, 10.0f),
