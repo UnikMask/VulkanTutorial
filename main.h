@@ -172,8 +172,6 @@ const VkPipelineDepthStencilStateCreateInfo DEFAULT_DEPTH_STENCIL{
 	.depthCompareOp = VK_COMPARE_OP_LESS,
 	.depthBoundsTestEnable = VK_FALSE,
 	.stencilTestEnable = VK_FALSE,
-	.minDepthBounds = 0.0f,
-	.maxDepthBounds = 1.0f,
 };
 
 const VkPipelineInputAssemblyStateCreateInfo DEFAULT_INPUT_ASSEMBLY{
