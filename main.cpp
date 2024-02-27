@@ -984,9 +984,7 @@ class HelloTriangleApplication {
 			.pViewportState = &viewportState,
 			.pRasterizationState = &RASTERIZER_DEPTH_OFF,
 			.pMultisampleState = &multisampling,
-			.pDepthStencilState = hasStencilComponent(findDepthFormat())
-									  ? &DEFAULT_DEPTH_STENCIL
-									  : &DEFAULT_DEPTH_NO_STENCIL,
+			.pDepthStencilState = &DEFAULT_DEPTH_NO_STENCIL,
 			.pColorBlendState = &DEFAULT_COLOR_BLEND_INFO,
 			.pDynamicState = &DEFAULT_DYNAMIC_STATE,
 			.layout = pipelineLayout,
