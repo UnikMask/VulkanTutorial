@@ -8,8 +8,13 @@ project("VulkanTutorial" VERSION "0.1.0" DESCRIPTION "My work on the vulkan tuto
 set(GLM_ENABLE_CXX_20 "ON")
 set(GLFW_BUILD_WAYLAND "ON")
 set(GLFW_BUILD_X11 "ON")
+
+if (LINUX)
+    add_compile_options(-fsanitize=address)
+    add_link_options(-fsanitize=address)
+endif()
+
 find_package(Vulkan REQUIRED)
-find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 FetchContent_Declare(
 	glm
 	GIT_REPOSITORY	https://github.com/g-truc/glm.git
@@ -35,7 +40,7 @@ add_custom_target(compile_shaders ALL
     COMMENT "Compiling shaders")
 
 add_custom_target ( compile_tags ALL
-    COMMAND ctags -R --c++-kinds=+p --fields=+iaS --extras=+q . 
+    COMMAND ctags main.cpp main.h --c++-kinds=+p --fields=+iaS --extras=+q . 
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Compiling project tags")
 
@@ -50,7 +55,6 @@ add_dependencies(${PROJECT_NAME} compile_tags)
 add_dependencies(${PROJECT_NAME} copy_resources)
 
 target_link_libraries(${PROJECT_NAME} 
-    PRIVATE GPUOpen::VulkanMemoryAllocator
     PUBLIC Vulkan::Vulkan
     PUBLIC glm::glm
     PUBLIC glfw)
